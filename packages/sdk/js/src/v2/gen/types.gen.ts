@@ -3840,11 +3840,11 @@ export type ResearchAtomsListResponses = {
       research_project_id: string
       atom_name: string
       atom_type: string
-      atom_content_path: string | null
+      atom_claim_path: string | null
       atom_evidence_type: string
       atom_evidence_status: string
-      atom_evidence_plan_path: string | null
-      atom_evidence_result_path: string | null
+      atom_experiments_plan_path: string | null
+      atom_evidence_path: string | null
       article_id: string | null
       exp_id: string | null
       session_id: string | null
@@ -3972,11 +3972,11 @@ export type ResearchSessionAtomGetResponses = {
       research_project_id: string
       atom_name: string
       atom_type: string
-      atom_content_path: string | null
+      atom_claim_path: string | null
       atom_evidence_type: string
       atom_evidence_status: string
-      atom_evidence_plan_path: string | null
-      atom_evidence_result_path: string | null
+      atom_experiments_plan_path: string | null
+      atom_evidence_path: string | null
       article_id: string | null
       exp_id: string | null
       session_id: string | null

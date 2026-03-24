@@ -37,7 +37,6 @@ import {
   AtomRelationCreateTool,
   AtomRelationDeleteTool,
 } from "./atom"
-import { ArticleReadTool } from "./article"
 import { ResearchBackgroundTool, ResearchGoalTool } from "./research-background"
 import { ResearchInfoTool } from "./research-info"
 import { Glob } from "../util/glob"
@@ -136,7 +135,6 @@ export namespace ToolRegistry {
       AtomRelationQueryTool,
       AtomRelationCreateTool,
       AtomRelationDeleteTool,
-      ArticleReadTool,
       ResearchBackgroundTool,
       ResearchGoalTool,
       ResearchInfoTool,

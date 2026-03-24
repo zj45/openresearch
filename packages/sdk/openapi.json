@@ -4241,7 +4241,7 @@
                           "atom_type": {
                             "type": "string"
                           },
-                          "atom_content_path": {
+                          "atom_claim_path": {
                             "anyOf": [
                               {
                                 "type": "string"
@@ -4257,7 +4257,7 @@
                           "atom_evidence_status": {
                             "type": "string"
                           },
-                          "atom_evidence_plan_path": {
+                          "atom_experiments_plan_path": {
                             "anyOf": [
                               {
                                 "type": "string"
@@ -4267,7 +4267,7 @@
                               }
                             ]
                           },
-                          "atom_evidence_result_path": {
+                          "atom_evidence_path": {
                             "anyOf": [
                               {
                                 "type": "string"
@@ -4319,11 +4319,11 @@
                           "research_project_id",
                           "atom_name",
                           "atom_type",
-                          "atom_content_path",
+                          "atom_claim_path",
                           "atom_evidence_type",
                           "atom_evidence_status",
-                          "atom_evidence_plan_path",
-                          "atom_evidence_result_path",
+                          "atom_experiments_plan_path",
+                          "atom_evidence_path",
                           "article_id",
                           "exp_id",
                           "session_id",
@@ -4668,7 +4668,7 @@
                             "atom_type": {
                               "type": "string"
                             },
-                            "atom_content_path": {
+                            "atom_claim_path": {
                               "anyOf": [
                                 {
                                   "type": "string"
@@ -4684,7 +4684,7 @@
                             "atom_evidence_status": {
                               "type": "string"
                             },
-                            "atom_evidence_plan_path": {
+                            "atom_experiments_plan_path": {
                               "anyOf": [
                                 {
                                   "type": "string"
@@ -4694,7 +4694,7 @@
                                 }
                               ]
                             },
-                            "atom_evidence_result_path": {
+                            "atom_evidence_path": {
                               "anyOf": [
                                 {
                                   "type": "string"
@@ -4746,11 +4746,11 @@
                             "research_project_id",
                             "atom_name",
                             "atom_type",
-                            "atom_content_path",
+                            "atom_claim_path",
                             "atom_evidence_type",
                             "atom_evidence_status",
-                            "atom_evidence_plan_path",
-                            "atom_evidence_result_path",
+                            "atom_experiments_plan_path",
+                            "atom_evidence_path",
                             "article_id",
                             "exp_id",
                             "session_id",
