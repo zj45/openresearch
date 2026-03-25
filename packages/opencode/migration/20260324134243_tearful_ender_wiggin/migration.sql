@@ -1,0 +1,1 @@
+ALTER TABLE `atom` ADD `atom_evidence_assessment_path` text;

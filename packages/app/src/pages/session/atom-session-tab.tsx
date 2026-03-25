@@ -8,7 +8,7 @@ import type { ResearchSessionAtomGetResponse } from "@opencode-ai/sdk/v2"
 
 type Atom = NonNullable<ResearchSessionAtomGetResponse["atom"]>
 
-export function AtomSessionTab(props: { atom: Atom; activeTab: "content" | "proof" | "plan" }) {
+export function AtomSessionTab(props: { atom: Atom; activeTab: "content" | "evidence" | "plan" }) {
   const file = useFile()
   const navigate = useNavigate()
   const params = useParams()
@@ -28,11 +28,11 @@ export function AtomSessionTab(props: { atom: Atom; activeTab: "content" | "proo
   const filePath = createMemo(() => {
     switch (props.activeTab) {
       case "content":
-        return props.atom.atom_content_path
-      case "proof":
-        return props.atom.atom_proof_result_path
+        return props.atom.atom_claim_path
+      case "evidence":
+        return props.atom.atom_evidence_path
       case "plan":
-        return props.atom.atom_proof_plan_path
+        return props.atom.atom_experiments_plan_path
       default:
         return null
     }
@@ -71,8 +71,8 @@ export function AtomSessionTab(props: { atom: Atom; activeTab: "content" | "proo
       // So we check if one ends with the other
       if (
         (event.file === currentFilePath ||
-         event.file.endsWith(currentFilePath) ||
-         currentFilePath.endsWith(event.file)) &&
+          event.file.endsWith(currentFilePath) ||
+          currentFilePath.endsWith(event.file)) &&
         (event.event === "change" || event.event === "add")
       ) {
         console.log("[atom-session-tab] File changed, reloading:", currentFilePath)
@@ -109,8 +109,8 @@ export function AtomSessionTab(props: { atom: Atom; activeTab: "content" | "proo
     switch (props.activeTab) {
       case "content":
         return "Content"
-      case "proof":
-        return "Proof"
+      case "evidence":
+        return "Evidence"
       case "plan":
         return "Experiment Plan"
       default:
@@ -150,9 +150,7 @@ export function AtomSessionTab(props: { atom: Atom; activeTab: "content" | "proo
         <Show when={hasError()}>
           <div class="rounded-md border border-border-weak-base bg-background-base p-3">
             <div class="text-12-semibold text-text-strong mb-2">{tabTitle()}</div>
-            <div class="text-12-regular text-text-weak">
-              Failed to load file content.
-            </div>
+            <div class="text-12-regular text-text-weak">Failed to load file content.</div>
           </div>
         </Show>
 

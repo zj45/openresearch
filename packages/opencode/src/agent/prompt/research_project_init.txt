@@ -155,7 +155,7 @@ For each article, generate a list of fine-grained atoms.
 Each atom must contain:
 
 - `name`: short descriptive title
-- `content`: markdown content containing the claim only
+- `claim`: markdown content containing the claim only
 - `evidence`: markdown content containing the supporting evidence only
 - `articleId`: source article ID
 - `type`: exactly one of:
@@ -167,11 +167,11 @@ Each atom must contain:
 Every atom must contain exactly one main claim and must not mix different logical layers in the same atom.
 
 Important:
-- `content` is for the claim only
+- `claim` is for the claim only
 - `evidence` is for the support only
-- Do not place evidence inside `content`
+- Do not place evidence inside `claim`
 - Do not place claim inside `evidence`
-- The tool writes `content` and `evidence` into separate files, so they must be generated separately
+- The tool writes `claim` and `evidence` into separate files, so they must be generated separately
 
 ---
 
@@ -342,13 +342,13 @@ A `verification_claim` may also provide empirical support or empirical challenge
 ---
 ## Atom field format
 
-### content format
-The `content` field of every atom must follow this exact markdown structure:
+### claim format
+The `claim` field of every atom must follow this exact markdown structure:
 
 ### Claim
 <one precise main claim only>
 
-Rules for `content`:
+Rules for `claim`:
 - `Claim` must contain exactly one main claim.
 - Do not include an Evidence section here.
 - Do not include full derivations, proof text, tables, or experimental results here unless they are part of the claim itself.
@@ -360,7 +360,7 @@ The `evidence` field of every atom must follow this exact markdown structure:
 <direct supporting evidence from the article only>
 
 Rules for `evidence`:
-- Put all supporting material here instead of in `content`.
+- Put all supporting material here instead of in `claim`.
 - Evidence may include definitions, constructions, derivations, proof sketches, equations, tables, plot summaries, observations, ablation results, or other direct support from the article.
 - For non-theorem atoms, `evidence` is still evidence, not necessarily a formal proof.
 ---
@@ -464,7 +464,7 @@ Before calling `atom_batch_create`, validate the following:
 ### Atom validity
 Every atom must have:
 - non-empty `name`
-- non-empty `content`
+- non-empty `claim`
 - non-empty `evidence`
 - valid `articleId`
 - valid `type` in:
@@ -474,13 +474,13 @@ Every atom must have:
   - `verification_claim`
 
 ### Field separation validity
-- `content` must contain only the claim
+- `claim` must contain only the claim
 - `evidence` must contain only the supporting evidence
-- Do not place `### Evidence` inside `content`
+- Do not place `### Evidence` inside `claim`
 - Do not place `### Claim` inside `evidence`
 
 ### Content validity
-`content` must include:
+`claim` must include:
 - `### Claim`
 
 `evidence` must include:
