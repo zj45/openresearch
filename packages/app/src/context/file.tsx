@@ -200,6 +200,33 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
         () => [],
       )
 
+    const save = (input: string, content: string) => {
+      const file = path.normalize(input)
+      if (!file) return Promise.resolve(undefined)
+
+      ensure(file)
+
+      return sdk.client.file.write({ path: file, content }).then(
+        (x) => {
+          const next = x.data
+          if (!next) return next
+          setLoaded(file, next)
+          touchFileContent(file, approxBytes(next))
+          evictContent(new Set([file]))
+          return next
+        },
+        (error) => {
+          const message = errorMessage(error)
+          showToast({
+            variant: "error",
+            title: language.t("common.requestFailed"),
+            description: message,
+          })
+          throw error
+        },
+      )
+    }
+
     const stop = sdk.event.listen((e) => {
       invalidateFromWatcher(e.details, {
         normalize: path.normalize,
@@ -267,6 +294,7 @@ export const { use: useFile, provider: FileProvider } = createSimpleContext({
       },
       get,
       load,
+      save,
       scrollTop,
       scrollLeft,
       setScrollTop,

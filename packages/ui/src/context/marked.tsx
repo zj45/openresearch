@@ -462,6 +462,8 @@ export const { use: useMarked, provider: MarkedProvider } = createSimpleContext(
   init: (props: { nativeParser?: NativeMarkdownParser }) => {
     const jsParser = marked.use(
       {
+        breaks: true,
+        gfm: true,
         renderer: {
           link({ href, title, text }) {
             const titleAttr = title ? ` title="${title}"` : ""

@@ -47,6 +47,7 @@ pub fn parse_markdown(input: &str) -> String {
     options.extension.table = true;
     options.extension.tasklist = true;
     options.extension.autolink = true;
+    options.render.hardbreaks = true;
     options.render.r#unsafe = true;
 
     let arena = Arena::new();
@@ -60,4 +61,15 @@ pub fn parse_markdown(input: &str) -> String {
 #[specta::specta]
 pub async fn parse_markdown_command(markdown: String) -> Result<String, String> {
     Ok(parse_markdown(&markdown))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_markdown;
+
+    #[test]
+    fn preserves_single_line_breaks() {
+        let html = parse_markdown("a\nb");
+        assert!(html.contains("<br"), "expected hard break in {html}");
+    }
 }

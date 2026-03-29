@@ -117,6 +117,7 @@ export const dict: Record<string, string> = {
   "ui.common.dismiss": "Dismiss",
   "ui.common.close": "Close",
   "ui.common.next": "Next",
+  "ui.common.save": "Save",
   "ui.common.submit": "Submit",
 
   "ui.permission.deny": "Deny",

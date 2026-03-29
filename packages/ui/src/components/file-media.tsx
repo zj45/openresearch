@@ -1,5 +1,16 @@
 import type { FileContent } from "@opencode-ai/sdk/v2"
-import { createEffect, createMemo, createResource, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js"
+import {
+  createEffect,
+  createMemo,
+  createResource,
+  createSignal,
+  Match,
+  on,
+  onCleanup,
+  Show,
+  Switch,
+  type JSX,
+} from "solid-js"
 import { useI18n } from "../context/i18n"
 import {
   dataUrlFromMediaValue,
@@ -10,6 +21,7 @@ import {
   normalizeMimeType,
   svgTextFromValue,
 } from "../pierre/media"
+import { Button } from "./button"
 import { Markdown } from "./markdown"
 
 export type FileMediaOptions = {
@@ -19,6 +31,7 @@ export type FileMediaOptions = {
   before?: unknown
   after?: unknown
   readFile?: (path: string) => Promise<FileContent | undefined>
+  onSave?: (content: string) => Promise<void>
   onLoad?: () => void
   onError?: (ctx: { kind: "image" | "audio" | "svg" }) => void
 }
@@ -30,8 +43,15 @@ function mediaValue(cfg: FileMediaOptions, mode: "image" | "audio") {
 }
 
 export function FileMedia(props: { media?: FileMediaOptions; fallback: () => JSX.Element }) {
+  let editorEl: HTMLTextAreaElement | undefined
+  let previewEl: HTMLDivElement | undefined
+  let syncing = false
   const i18n = useI18n()
   const cfg = () => props.media
+  const [editing, setEditing] = createSignal(false)
+  const [saving, setSaving] = createSignal(false)
+  const [draft, setDraft] = createSignal("")
+  const [value, setValue] = createSignal<string>()
   const kind = createMemo(() => {
     const media = cfg()
     if (!media || media.mode === "off") return
@@ -145,6 +165,24 @@ export function FileMedia(props: { media?: FileMediaOptions; fallback: () => JSX
     return [media.path, media.current] as const
   })
 
+  const markdownValue = createMemo(() => {
+    const media = cfg()
+    if (!media) return
+    return markdownTextFromValue(media.current ?? media.after ?? media.before)
+  })
+
+  createEffect(
+    on(
+      markdownValue,
+      (next) => {
+        if (next === undefined) return
+        setValue(next)
+        if (!editing()) setDraft(next)
+      },
+      { defer: true },
+    ),
+  )
+
   createEffect(
     on(
       svgInvalid,
@@ -212,6 +250,31 @@ export function FileMedia(props: { media?: FileMediaOptions; fallback: () => JSX
 
   const kindLabel = (value: "image" | "audio") =>
     i18n.t(value === "image" ? "ui.fileMedia.kind.image" : "ui.fileMedia.kind.audio")
+
+  const syncScroll = (from?: HTMLElement, to?: HTMLElement) => {
+    if (!from || !to || syncing) return
+
+    const maxFrom = Math.max(0, from.scrollHeight - from.clientHeight)
+    const maxTo = Math.max(0, to.scrollHeight - to.clientHeight)
+    const ratio = maxFrom > 0 ? from.scrollTop / maxFrom : 0
+
+    syncing = true
+    to.scrollTop = ratio * maxTo
+    requestAnimationFrame(() => {
+      syncing = false
+    })
+  }
+
+  createEffect(
+    on(
+      () => [draft(), editing()] as const,
+      ([, open]) => {
+        if (!open) return
+        requestAnimationFrame(() => syncScroll(editorEl, previewEl))
+      },
+      { defer: true },
+    ),
+  )
 
   return (
     <Switch>
@@ -325,11 +388,91 @@ export function FileMedia(props: { media?: FileMediaOptions; fallback: () => JSX
         {(() => {
           const media = cfg()
           if (!media) return props.fallback()
-          const text = markdownTextFromValue(media.current)
+          const text = value() ?? markdownValue()
           if (text === undefined) return props.fallback()
+          const editable = !!media.onSave && !!media.path
+          const edit = () => {
+            setValue(text)
+            setDraft(text)
+            setEditing(true)
+          }
+          const cancel = () => {
+            setDraft(text)
+            setEditing(false)
+          }
+          const save = async () => {
+            const next = draft()
+            if (!editable || next === text || saving()) {
+              cancel()
+              return
+            }
+
+            setSaving(true)
+            try {
+              await media.onSave?.(next)
+              setValue(next)
+              setEditing(false)
+            } finally {
+              setSaving(false)
+            }
+          }
+
           return (
-            <div class="px-6 py-4 overflow-auto" data-component="file-markdown-preview">
-              <Markdown text={text} />
+            <div class="flex flex-col gap-3 px-6 py-4 overflow-auto" data-component="file-markdown-preview">
+              <Show when={editable}>
+                <div class="flex items-center justify-end gap-2">
+                  <Show
+                    when={editing()}
+                    fallback={
+                      <Button size="small" variant="secondary" onClick={edit}>
+                        {i18n.t("ui.messagePart.title.edit")}
+                      </Button>
+                    }
+                  >
+                    <Button size="small" variant="ghost" onClick={cancel} disabled={saving()}>
+                      {i18n.t("ui.common.cancel")}
+                    </Button>
+                    <Button size="small" variant="primary" onClick={save} disabled={saving()}>
+                      {i18n.t("ui.common.save")}
+                    </Button>
+                  </Show>
+                </div>
+              </Show>
+              <Show when={editing()} fallback={<Markdown text={text} />}>
+                <div class="grid min-h-[24rem] grid-cols-1 gap-3 lg:grid-cols-2">
+                  <div class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border-weak-base bg-background-base">
+                    <div class="border-b border-border-weak-base px-3 py-2 text-12-medium text-text-weak">Markdown</div>
+                    <div class="min-h-0 flex-1">
+                      <textarea
+                        ref={editorEl}
+                        value={draft()}
+                        class="min-h-[24rem] h-full w-full resize-none border-0 bg-transparent px-3 py-2 font-mono text-sm leading-6 text-text-base outline-none"
+                        onInput={(event: InputEvent & { currentTarget: HTMLTextAreaElement }) => {
+                          setDraft(event.currentTarget.value)
+                          syncScroll(event.currentTarget, previewEl)
+                        }}
+                        onScroll={(event) => syncScroll(event.currentTarget, previewEl)}
+                        onKeyDown={(event: KeyboardEvent) => {
+                          if ((event.metaKey || event.ctrlKey) && event.key === "s") {
+                            event.preventDefault()
+                            void save()
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <div class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border-weak-base bg-background-base">
+                    <div class="border-b border-border-weak-base px-3 py-2 text-12-medium text-text-weak">Preview</div>
+                    <div
+                      ref={previewEl}
+                      class="min-h-[24rem] overflow-auto px-3 py-2"
+                      onScroll={(event) => syncScroll(event.currentTarget, editorEl)}
+                    >
+                      <Markdown text={draft()} />
+                    </div>
+                  </div>
+                </div>
+              </Show>
             </div>
           )
         })()}

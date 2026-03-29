@@ -576,7 +576,7 @@ export namespace File {
       return { type: "text", content, mimeType, encoding: "base64" }
     }
 
-    const content = (await Filesystem.readText(full).catch(() => "")).trim()
+    const content = await Filesystem.readText(full).catch(() => "")
 
     if (project.vcs === "git") {
       let diff = await $`git -c core.fsmonitor=false diff ${file}`.cwd(Instance.directory).quiet().nothrow().text()
@@ -598,6 +598,18 @@ export namespace File {
       }
     }
     return { type: "text", content }
+  }
+
+  export async function write(file: string, content: string): Promise<Content> {
+    using _ = log.time("write", { file })
+    const full = path.join(Instance.directory, file)
+
+    if (!Instance.containsPath(full)) {
+      throw new Error(`Access denied: path escapes project directory`)
+    }
+
+    await Filesystem.write(full, content)
+    return read(file)
   }
 
   export async function list(dir?: string) {
@@ -688,10 +700,7 @@ export namespace File {
           : result.files
         : kind === "directory"
           ? result.dirs
-          : [
-              ...(isGlobalHome && query ? await store.homefiles() : result.files),
-              ...result.dirs,
-            ]
+          : [...(isGlobalHome && query ? await store.homefiles() : result.files), ...result.dirs]
 
     const searchLimit = kind === "directory" && !preferHidden ? limit * 20 : limit
     const sorted = fuzzysort.go(query, items, { limit: searchLimit }).map((r) => r.target)

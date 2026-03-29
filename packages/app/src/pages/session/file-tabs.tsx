@@ -432,6 +432,11 @@ export function FileTabContent(props: { tab: string }) {
           mode: "auto",
           path: path(),
           current: state()?.content,
+          onSave: async (next: string) => {
+            const p = path()
+            if (!p) return
+            await file.save(p, next)
+          },
           onLoad: queueRestore,
           onError: (args: { kind: "image" | "audio" | "svg" }) => {
             if (args.kind !== "svg") return
