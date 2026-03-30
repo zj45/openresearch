@@ -47,6 +47,11 @@ export type EventProjectUpdated = {
   properties: Project
 }
 
+export type EventProjectDeleted = {
+  type: "project.deleted"
+  properties: Project
+}
+
 export type EventServerInstanceDisposed = {
   type: "server.instance.disposed"
   properties: {
@@ -968,6 +973,7 @@ export type Event =
   | EventInstallationUpdated
   | EventInstallationUpdateAvailable
   | EventProjectUpdated
+  | EventProjectDeleted
   | EventServerInstanceDisposed
   | EventServerConnected
   | EventGlobalDisposed
@@ -2114,6 +2120,41 @@ export type ProjectInitGitResponses = {
 }
 
 export type ProjectInitGitResponse = ProjectInitGitResponses[keyof ProjectInitGitResponses]
+
+export type ProjectDeleteData = {
+  body?: never
+  path: {
+    projectID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+    removeLocal?: "true" | "false"
+  }
+  url: "/project/{projectID}"
+}
+
+export type ProjectDeleteErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type ProjectDeleteError = ProjectDeleteErrors[keyof ProjectDeleteErrors]
+
+export type ProjectDeleteResponses = {
+  /**
+   * Deleted project
+   */
+  200: boolean
+}
+
+export type ProjectDeleteResponse = ProjectDeleteResponses[keyof ProjectDeleteResponses]
 
 export type ProjectUpdateData = {
   body?: {
@@ -3863,6 +3904,91 @@ export type ResearchAtomsListResponses = {
 }
 
 export type ResearchAtomsListResponse = ResearchAtomsListResponses[keyof ResearchAtomsListResponses]
+
+export type ResearchRelationDeleteData = {
+  body?: {
+    source_atom_id: string
+    target_atom_id: string
+    relation_type: "motivates" | "formalizes" | "derives" | "analyzes" | "validates" | "contradicts" | "other"
+  }
+  path: {
+    researchProjectId: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/research/project/{researchProjectId}/relation"
+}
+
+export type ResearchRelationDeleteErrors = {
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type ResearchRelationDeleteError = ResearchRelationDeleteErrors[keyof ResearchRelationDeleteErrors]
+
+export type ResearchRelationDeleteResponses = {
+  /**
+   * Deleted relation
+   */
+  200: {
+    source_atom_id: string
+    target_atom_id: string
+    relation_type: "motivates" | "formalizes" | "derives" | "analyzes" | "validates" | "contradicts" | "other"
+    deleted: true
+  }
+}
+
+export type ResearchRelationDeleteResponse = ResearchRelationDeleteResponses[keyof ResearchRelationDeleteResponses]
+
+export type ResearchRelationUpdateData = {
+  body?: {
+    source_atom_id: string
+    target_atom_id: string
+    relation_type: "motivates" | "formalizes" | "derives" | "analyzes" | "validates" | "contradicts" | "other"
+    next_relation_type: "motivates" | "formalizes" | "derives" | "analyzes" | "validates" | "contradicts" | "other"
+  }
+  path: {
+    researchProjectId: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/research/project/{researchProjectId}/relation"
+}
+
+export type ResearchRelationUpdateErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type ResearchRelationUpdateError = ResearchRelationUpdateErrors[keyof ResearchRelationUpdateErrors]
+
+export type ResearchRelationUpdateResponses = {
+  /**
+   * Updated relation
+   */
+  200: {
+    atom_id_source: string
+    atom_id_target: string
+    relation_type: string
+    note: string | null
+    time_created: number
+    time_updated: number
+  }
+}
+
+export type ResearchRelationUpdateResponse = ResearchRelationUpdateResponses[keyof ResearchRelationUpdateResponses]
 
 export type ResearchRelationCreateData = {
   body?: {

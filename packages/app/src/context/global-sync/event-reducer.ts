@@ -26,6 +26,16 @@ export function applyGlobalEvent(input: {
     return
   }
 
+  if (input.event.type === "project.deleted") {
+    const properties = input.event.properties as Project
+    input.setGlobalProject((draft) => {
+      const result = Binary.search(draft, properties.id, (s) => s.id)
+      if (!result.found) return
+      draft.splice(result.index, 1)
+    })
+    return
+  }
+
   if (input.event.type !== "project.updated") return
   const properties = input.event.properties as Project
   const result = Binary.search(input.project, properties.id, (s) => s.id)

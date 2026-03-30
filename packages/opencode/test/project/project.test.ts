@@ -1,5 +1,7 @@
 import { describe, expect, mock, test } from "bun:test"
 import { Project } from "../../src/project/project"
+import { Session } from "../../src/session"
+import { Instance } from "../../src/project/instance"
 import { Log } from "../../src/util/log"
 import { $ } from "bun"
 import path from "path"
@@ -344,5 +346,39 @@ describe("Project.update", () => {
     expect(updated.icon?.url).toBe("https://example.com/favicon.ico")
     expect(updated.icon?.color).toBe("#00ff00")
     expect(updated.commands?.start).toBe("make start")
+  })
+})
+
+describe("Project.remove", () => {
+  test("removes the project and all of its sessions", async () => {
+    await using tmp = await tmpdir({ git: true })
+
+    const session = await Instance.provide({
+      directory: tmp.path,
+      fn: async () => Session.create({ title: "remove-project-session" }),
+    })
+
+    const project = Project.get(session.projectID)
+    expect(project).toBeDefined()
+
+    const result = await Project.remove({ projectID: session.projectID })
+    expect(result).toBe(true)
+    expect(Project.get(session.projectID)).toBeUndefined()
+
+    const sessions = [...Session.listGlobal({ directory: tmp.path, limit: 20, archived: true })]
+    expect(sessions.find((item) => item.id === session.id)).toBeUndefined()
+  })
+
+  test("removes the local project directory when requested", async () => {
+    await using tmp = await tmpdir({ git: true })
+
+    const session = await Instance.provide({
+      directory: tmp.path,
+      fn: async () => Session.create({ title: "remove-project-local" }),
+    })
+
+    const result = await Project.remove({ projectID: session.projectID, removeLocal: true })
+    expect(result).toBe(true)
+    expect(await Filesystem.exists(tmp.path)).toBe(false)
   })
 })

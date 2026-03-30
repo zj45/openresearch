@@ -1,7 +1,8 @@
+import { rm } from "fs/promises"
+import path from "path"
 import z from "zod"
 import { Filesystem } from "../util/filesystem"
-import path from "path"
-import { Database, eq } from "../storage/db"
+import { Database, NotFoundError, and, eq, inArray } from "../storage/db"
 import { ProjectTable } from "./project.sql"
 import { SessionTable } from "../session/session.sql"
 import { Log } from "../util/log"
@@ -15,6 +16,11 @@ import { existsSync } from "fs"
 import { git } from "../util/git"
 import { Glob } from "../util/glob"
 import { which } from "../util/which"
+import { Storage } from "@/storage/storage"
+import { Global } from "@/global"
+import { ExperimentTable, ResearchProjectTable, AtomTable } from "@/research/research.sql"
+import { $ } from "bun"
+import { Instance } from "./instance"
 
 export namespace Project {
   const log = Log.create({ service: "project" })
@@ -63,6 +69,7 @@ export namespace Project {
 
   export const Event = {
     Updated: BusEvent.define("project.updated", Info),
+    Deleted: BusEvent.define("project.deleted", Info),
   }
 
   type Row = typeof ProjectTable.$inferSelect
@@ -393,6 +400,145 @@ export namespace Project {
         },
       })
       return data
+    },
+  )
+
+  export const remove = fn(
+    z.object({
+      projectID: z.string(),
+      directory: z.string().optional(),
+      removeLocal: z.boolean().optional(),
+    }),
+    async (input) => {
+      const row = Database.use((db) => db.select().from(ProjectTable).where(eq(ProjectTable.id, input.projectID)).get())
+      const project = row ? fromRow(row) : undefined
+      if (input.projectID !== "global" && !project) {
+        throw new NotFoundError({ message: `Project not found: ${input.projectID}` })
+      }
+      if (input.projectID === "global" && !input.directory) {
+        throw new Error("directory is required for global project removal")
+      }
+
+      const info =
+        project ??
+        ({
+          id: "global",
+          worktree: input.directory!,
+          sandboxes: [],
+          time: {
+            created: Date.now(),
+            updated: Date.now(),
+          },
+        } satisfies Info)
+
+      const sessions = Database.use((db) =>
+        db
+          .select({
+            id: SessionTable.id,
+            slug: SessionTable.slug,
+            time_created: SessionTable.time_created,
+            share_url: SessionTable.share_url,
+          })
+          .from(SessionTable)
+          .where(
+            input.projectID === "global"
+              ? and(eq(SessionTable.project_id, input.projectID), eq(SessionTable.directory, input.directory!))
+              : eq(SessionTable.project_id, input.projectID),
+          )
+          .all(),
+      )
+
+      const research =
+        input.projectID === "global"
+          ? []
+          : Database.use((db) =>
+              db
+                .select({
+                  id: ResearchProjectTable.research_project_id,
+                })
+                .from(ResearchProjectTable)
+                .where(eq(ResearchProjectTable.project_id, input.projectID))
+                .all(),
+            )
+      const researchIDs = research.map((item) => item.id)
+      const atoms =
+        researchIDs.length > 0
+          ? Database.use((db) =>
+              db
+                .select({
+                  id: AtomTable.atom_id,
+                })
+                .from(AtomTable)
+                .where(inArray(AtomTable.research_project_id, researchIDs))
+                .all(),
+            )
+          : []
+      const experiments =
+        researchIDs.length > 0
+          ? Database.use((db) =>
+              db
+                .select({
+                  id: ExperimentTable.exp_id,
+                })
+                .from(ExperimentTable)
+                .where(inArray(ExperimentTable.research_project_id, researchIDs))
+                .all(),
+            )
+          : []
+
+      const base =
+        info.vcs || input.projectID !== "global"
+          ? path.join(info.worktree, ".opencode", "plans")
+          : path.join(Global.Path.data, "plans")
+
+      for (const session of sessions) {
+        await Storage.remove(["session_diff", session.id]).catch(() => undefined)
+        await rm(path.join(base, `${session.time_created}-${session.slug}.md`), { force: true }).catch(() => undefined)
+        Database.use((db) => db.delete(SessionTable).where(eq(SessionTable.id, session.id)).run())
+      }
+
+      for (const atom of atoms) {
+        await rm(path.join(info.worktree, "atom_list", atom.id), { recursive: true, force: true }).catch(
+          () => undefined,
+        )
+      }
+      for (const experiment of experiments) {
+        await rm(path.join(info.worktree, "exp_results", experiment.id), { recursive: true, force: true }).catch(
+          () => undefined,
+        )
+      }
+
+      if (input.projectID !== "global") {
+        Database.use((db) => db.delete(ProjectTable).where(eq(ProjectTable.id, input.projectID)).run())
+        GlobalBus.emit("event", {
+          payload: {
+            type: Event.Deleted.type,
+            properties: info,
+          },
+        })
+      }
+
+      if (input.removeLocal) {
+        const dirs = [...new Set([info.worktree, ...info.sandboxes])]
+          .sort((a, b) => b.length - a.length)
+          .filter((directory, index, list) => list.indexOf(directory) === index)
+
+        for (const directory of dirs) {
+          await Instance.disposeDirectory(directory).catch(() => undefined)
+          await $`git fsmonitor--daemon stop`.quiet().nothrow().cwd(directory).catch(() => undefined)
+          await rm(directory, {
+            recursive: true,
+            force: true,
+            maxRetries: 5,
+            retryDelay: 100,
+          })
+          if (await Filesystem.exists(directory)) {
+            throw new Error(`Failed to remove local project directory: ${directory}`)
+          }
+        }
+      }
+
+      return true
     },
   )
 

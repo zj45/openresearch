@@ -347,6 +347,9 @@ function createGlobalSync() {
     icon(directory: string, value: string | undefined) {
       children.projectIcon(directory, value)
     },
+    dispose(directory: string) {
+      children.disposeDirectory(directory)
+    },
   }
 
   const updateConfig = async (config: Config) => {

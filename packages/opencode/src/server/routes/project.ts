@@ -113,5 +113,41 @@ export const ProjectRoutes = lazy(() =>
         const project = await Project.update({ ...body, projectID })
         return c.json(project)
       },
+    )
+    .delete(
+      "/:projectID",
+      describeRoute({
+        summary: "Delete project",
+        description: "Delete a project and permanently remove all associated local session data.",
+        operationId: "project.delete",
+        responses: {
+          200: {
+            description: "Deleted project",
+            content: {
+              "application/json": {
+                schema: resolver(z.boolean()),
+              },
+            },
+          },
+          ...errors(400, 404),
+        },
+      }),
+      validator("param", z.object({ projectID: z.string() })),
+      validator(
+        "query",
+        z.object({
+          directory: z.string().optional(),
+          removeLocal: z
+            .enum(["true", "false"])
+            .optional()
+            .transform((value) => value === "true"),
+        }),
+      ),
+      async (c) => {
+        const projectID = c.req.valid("param").projectID
+        const query = c.req.valid("query")
+        await Project.remove({ projectID, directory: query.directory, removeLocal: query.removeLocal })
+        return c.json(true)
+      },
     ),
 )
