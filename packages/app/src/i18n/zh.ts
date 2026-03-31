@@ -358,6 +358,9 @@ export const dict = {
   "dialog.project.edit.worktree.startup": "工作区启动脚本",
   "dialog.project.edit.worktree.startup.description": "在创建新的工作区 (worktree) 后运行。",
   "dialog.project.edit.worktree.startup.placeholder": "例如 bun install",
+  "dialog.project.delete.title": "删除项目",
+  "dialog.project.delete.confirm": '删除项目 "{{name}}"？',
+  "dialog.project.delete.description": "这会永久删除该项目的会话和相关本地元数据。",
 
   "context.breakdown.title": "上下文拆分",
   "context.breakdown.note": "输入 token 的大致拆分。“其他”包含工具定义和开销。",
@@ -811,6 +814,7 @@ export const dict = {
   "workspace.type.local": "本地",
   "workspace.type.sandbox": "沙盒",
   "workspace.create.failed.title": "创建工作区失败",
+  "project.delete.failed.title": "删除项目失败",
   "workspace.delete.failed.title": "删除工作区失败",
   "workspace.resetting.title": "正在重置工作区",
   "workspace.resetting.description": "这可能需要一点时间。",

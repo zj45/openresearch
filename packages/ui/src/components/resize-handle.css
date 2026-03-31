@@ -1,6 +1,6 @@
 [data-component="resize-handle"] {
   position: absolute;
-  z-index: 10;
+  z-index: 40;
 
   &::after {
     content: "";

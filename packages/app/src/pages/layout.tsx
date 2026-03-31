@@ -14,7 +14,7 @@ import {
 import { useNavigate, useParams } from "@solidjs/router"
 import { useLayout, LocalProject } from "@/context/layout"
 import { useGlobalSync } from "@/context/global-sync"
-import { Persist, persisted } from "@/utils/persist"
+import { Persist, persisted, removePersisted } from "@/utils/persist"
 import { base64Encode } from "@opencode-ai/util/encode"
 import { decode64 } from "@/utils/base64"
 import { ResizeHandle } from "@opencode-ai/ui/resize-handle"
@@ -1341,6 +1341,158 @@ export default function Layout(props: ParentProps) {
   }
 
   const showEditProjectDialog = (project: LocalProject) => dialog.show(() => <DialogEditProject project={project} />)
+  const showDeleteProjectDialog = (project: LocalProject) => dialog.show(() => <DialogDeleteProject project={project} />)
+
+  const SESSION_STATE_KEYS = [
+    { key: "prompt", legacy: "prompt", version: "v2" },
+    { key: "terminal", legacy: "terminal", version: "v1" },
+    { key: "file-view", legacy: "file", version: "v1" },
+  ] as const
+
+  function clearProjectPersist(project: LocalProject, sessions: Session[]) {
+    const dirs = workspaceIds(project)
+
+    for (const directory of dirs) {
+      clearWorkspaceTerminals(
+        directory,
+        sessions.filter((session) => session.directory === directory).map((session) => session.id),
+        platform,
+      )
+      removePersisted(Persist.workspace(directory, "vcs"), platform)
+      removePersisted(Persist.workspace(directory, "project"), platform)
+      removePersisted(Persist.workspace(directory, "icon"), platform)
+      removePersisted(Persist.workspace(directory, "prompt"), platform)
+      removePersisted(Persist.workspace(directory, "file-view"), platform)
+    }
+
+    for (const session of sessions) {
+      for (const entry of SESSION_STATE_KEYS) {
+        removePersisted(Persist.session(session.directory, session.id, entry.key), platform)
+        removePersisted({ key: `${session.directory}/${entry.legacy}/${session.id}.${entry.version}` }, platform)
+      }
+    }
+  }
+
+  async function deleteProject(project: LocalProject) {
+    if (!project.id) return false
+
+    const global = project.id === "global"
+    const meta = global ? undefined : globalSync.data.project.find((item) => item.id === project.id)
+    const root = meta?.worktree ?? project.worktree
+    const dirs = [...new Set([root, ...(meta?.sandboxes ?? project.sandboxes ?? []), project.worktree])]
+    const sessions = (
+      await Promise.all(
+        dirs.map((directory) =>
+          globalSDK.client.session
+            .list({ directory, limit: 1000 })
+            .then((x) => x.data ?? [])
+            .catch(() => [] as Session[]),
+        ),
+      )
+    ).flatMap((list) => list)
+    const list = layout.projects.list()
+    const keys = new Set(dirs.map((directory) => workspaceKey(directory)))
+    const match = (item: LocalProject) =>
+      item.id === project.id ||
+      keys.has(workspaceKey(item.worktree)) ||
+      item.sandboxes?.some((directory) => keys.has(workspaceKey(directory))) === true
+    const index = list.findIndex((item) => item.worktree === project.worktree)
+    const next = list.slice(index + 1).find((item) => !match(item)) ?? list.slice(0, index).reverse().find((item) => !match(item))
+    const current = workspaceKey(currentDir())
+    const active = currentProject()?.id === project.id || currentProject()?.worktree === root
+    const leaving = active || dirs.some((directory) => workspaceKey(directory) === current)
+    const safe =
+      [next?.worktree, globalSync.data.path.home, "/"].find((directory) => {
+        if (!directory) return false
+        return !keys.has(workspaceKey(directory))
+      }) ?? globalSync.data.path.home ?? "/"
+    const api = globalSDK.createClient({
+      directory: safe,
+      throwOnError: true,
+    }).project
+    const input = global
+      ? { projectID: project.id, directory: root, removeLocal: "true" as const }
+      : { projectID: project.id, removeLocal: "true" as const }
+    const matched = list.filter(match)
+    const shift = () => {
+      notification.project.markViewed(project.worktree)
+      setHoverProject(undefined)
+      setHoverSession(undefined)
+      for (const item of matched) {
+        layout.projects.close(item.worktree)
+      }
+
+      if (!leaving) return
+      if (!next) {
+        navigateWithSidebarReset("/")
+        return
+      }
+      server.projects.touch(next.worktree)
+      queueMicrotask(() => {
+        void navigateToProject(next.worktree)
+      })
+    }
+    const finalize = () => {
+      clearProjectPersist(project, sessions)
+      for (const directory of dirs) {
+        globalSync.project.dispose(directory)
+      }
+
+      if (!global) {
+        globalSync.set(
+          "project",
+          produce((draft) => {
+            for (let i = draft.length - 1; i >= 0; i--) {
+              const item = draft[i]
+              if (!item) continue
+              if (keys.has(workspaceKey(item.worktree))) {
+                draft.splice(i, 1)
+                continue
+              }
+              if (item.id === project.id) {
+                draft.splice(i, 1)
+              }
+            }
+          }),
+        )
+      }
+
+      setStore(
+        produce((draft) => {
+          delete draft.lastProjectSession[project.worktree]
+          delete draft.workspaceOrder[project.worktree]
+          if (project.id && !global) delete draft.workspaceBranchName[project.id]
+          for (const directory of dirs) {
+            delete draft.workspaceExpanded[directory]
+            delete draft.workspaceName[directory]
+            delete draft.workspaceName[workspaceKey(directory)]
+          }
+        }),
+      )
+      shift()
+      return true
+    }
+
+    shift()
+
+    const result = await api
+      .delete(input)
+      .then((x) => x.data ?? false)
+      .catch((err: unknown) => {
+        const message = errorMessage(err, language.t("common.requestFailed"))
+        if (!global && message.startsWith("Project not found:")) {
+          return true
+        }
+        showToast({
+          title: language.t("project.delete.failed.title"),
+          description: message,
+        })
+        return false
+      })
+
+    if (!result) return false
+    return finalize()
+  }
 
   async function chooseProject() {
     function resolve(result: string | string[] | null) {
@@ -1557,6 +1709,42 @@ export default function Layout(props: ParentProps) {
             </Button>
             <Button variant="primary" size="large" disabled={data.status === "loading"} onClick={handleDelete}>
               {language.t("workspace.delete.button")}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+    )
+  }
+
+  function DialogDeleteProject(props: { project: LocalProject }) {
+    const name = createMemo(() => displayName(props.project))
+    const [state, setState] = createStore({
+      deleting: false,
+    })
+
+    const handleDelete = async () => {
+      if (state.deleting) return
+      setState("deleting", true)
+      dialog.close()
+      const deleted = await deleteProject(props.project)
+      if (!deleted) setState("deleting", false)
+    }
+
+    return (
+      <Dialog title={language.t("dialog.project.delete.title")} fit>
+        <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3">
+          <div class="flex flex-col gap-1">
+            <span class="text-14-regular text-text-strong">
+              {language.t("dialog.project.delete.confirm", { name: name() })}
+            </span>
+            <span class="text-12-regular text-text-weak">{language.t("dialog.project.delete.description")}</span>
+          </div>
+          <div class="flex justify-end gap-2">
+            <Button variant="ghost" size="large" onClick={() => dialog.close()}>
+              {language.t("common.cancel")}
+            </Button>
+            <Button variant="primary" size="large" disabled={state.deleting} onClick={handleDelete}>
+              {language.t("common.delete")}
             </Button>
           </div>
         </div>
@@ -1872,6 +2060,7 @@ export default function Layout(props: ParentProps) {
     openSidebar: () => layout.sidebar.open(),
     closeProject,
     showEditProjectDialog,
+    showDeleteProjectDialog,
     toggleProjectWorkspaces,
     workspacesEnabled: (project) => project.vcs === "git" && layout.sidebar.workspaces(project.worktree)(),
     workspaceIds,
@@ -1978,6 +2167,15 @@ export default function Layout(props: ParentProps) {
                         <DropdownMenu.Item onSelect={() => showEditProjectDialog(p())}>
                           <DropdownMenu.ItemLabel>{language.t("common.edit")}</DropdownMenu.ItemLabel>
                         </DropdownMenu.Item>
+                        <Show when={!!p().id}>
+                          <DropdownMenu.Item
+                            data-action="project-delete-menu"
+                            data-project={base64Encode(p().worktree)}
+                            onSelect={() => showDeleteProjectDialog(p())}
+                          >
+                            <DropdownMenu.ItemLabel>{language.t("common.delete")}</DropdownMenu.ItemLabel>
+                          </DropdownMenu.Item>
+                        </Show>
                         <DropdownMenu.Item
                           data-action="project-workspaces-toggle"
                           data-project={base64Encode(p().worktree)}

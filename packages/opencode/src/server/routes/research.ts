@@ -14,7 +14,7 @@ import {
   RemoteServerTable,
   ExperimentWatchTable,
 } from "@/research/research.sql"
-import { eq } from "drizzle-orm"
+import { and, eq } from "drizzle-orm"
 import { Session } from "@/session"
 import { linkKinds } from "@/research/research.sql"
 import { Bus } from "@/bus"
@@ -160,6 +160,23 @@ const atomRelationCreateSchema = z.object({
   target_atom_id: z.string().min(1, "target atom required"),
   relation_type: z.enum(linkKinds),
   note: z.string().optional(),
+})
+
+const atomRelationDeleteSchema = z.object({
+  source_atom_id: z.string().min(1, "source atom required"),
+  target_atom_id: z.string().min(1, "target atom required"),
+  relation_type: z.enum(linkKinds),
+})
+
+const atomRelationUpdateSchema = atomRelationDeleteSchema.extend({
+  next_relation_type: z.enum(linkKinds),
+})
+
+const atomRelationDeleteResponseSchema = z.object({
+  source_atom_id: z.string(),
+  target_atom_id: z.string(),
+  relation_type: z.enum(linkKinds),
+  deleted: z.literal(true),
 })
 
 const atomDeleteResponseSchema = z.object({
@@ -320,6 +337,199 @@ export const ResearchRoutes = new Hono()
         note: body.note ?? null,
         time_created: now,
         time_updated: now,
+      })
+    },
+  )
+  .patch(
+    "/project/:researchProjectId/relation",
+    describeRoute({
+      summary: "Update atom relation",
+      description: "Update the type of an existing directed relation between two atoms in the same research project.",
+      operationId: "research.relation.update",
+      responses: {
+        200: {
+          description: "Updated relation",
+          content: {
+            "application/json": {
+              schema: resolver(atomRelationSchema),
+            },
+          },
+        },
+        ...errors(400, 404),
+      },
+    }),
+    validator("json", atomRelationUpdateSchema),
+    async (c) => {
+      const researchProjectId = c.req.param("researchProjectId")
+      const body = c.req.valid("json")
+
+      const source = Database.use((db) =>
+        db.select().from(AtomTable).where(eq(AtomTable.atom_id, body.source_atom_id)).get(),
+      )
+      if (!source || source.research_project_id !== researchProjectId) {
+        return c.json({ success: false, message: `source atom not found: ${body.source_atom_id}` }, 404)
+      }
+
+      const target = Database.use((db) =>
+        db.select().from(AtomTable).where(eq(AtomTable.atom_id, body.target_atom_id)).get(),
+      )
+      if (!target || target.research_project_id !== researchProjectId) {
+        return c.json({ success: false, message: `target atom not found: ${body.target_atom_id}` }, 404)
+      }
+
+      const existing = Database.use((db) =>
+        db
+          .select()
+          .from(AtomRelationTable)
+          .where(
+            and(
+              eq(AtomRelationTable.atom_id_source, body.source_atom_id),
+              eq(AtomRelationTable.atom_id_target, body.target_atom_id),
+              eq(AtomRelationTable.relation_type, body.relation_type),
+            ),
+          )
+          .get(),
+      )
+      if (!existing) {
+        return c.json({ success: false, message: "relation not found" }, 404)
+      }
+
+      if (body.next_relation_type === body.relation_type) {
+        return c.json(existing)
+      }
+
+      const conflict = Database.use((db) =>
+        db
+          .select()
+          .from(AtomRelationTable)
+          .where(
+            and(
+              eq(AtomRelationTable.atom_id_source, body.source_atom_id),
+              eq(AtomRelationTable.atom_id_target, body.target_atom_id),
+              eq(AtomRelationTable.relation_type, body.next_relation_type),
+            ),
+          )
+          .get(),
+      )
+      if (conflict) {
+        return c.json({ success: false, message: "relation already exists" }, 400)
+      }
+
+      const now = Date.now()
+      Database.transaction(() => {
+        Database.use((db) =>
+          db
+            .delete(AtomRelationTable)
+            .where(
+              and(
+                eq(AtomRelationTable.atom_id_source, body.source_atom_id),
+                eq(AtomRelationTable.atom_id_target, body.target_atom_id),
+                eq(AtomRelationTable.relation_type, body.relation_type),
+              ),
+            )
+            .run(),
+        )
+        Database.use((db) =>
+          db
+            .insert(AtomRelationTable)
+            .values({
+              atom_id_source: body.source_atom_id,
+              atom_id_target: body.target_atom_id,
+              relation_type: body.next_relation_type,
+              note: existing.note,
+              time_created: existing.time_created,
+              time_updated: now,
+            })
+            .run(),
+        )
+      })
+
+      await Bus.publish(Research.Event.AtomsUpdated, { researchProjectId })
+
+      return c.json({
+        atom_id_source: body.source_atom_id,
+        atom_id_target: body.target_atom_id,
+        relation_type: body.next_relation_type,
+        note: existing.note,
+        time_created: existing.time_created,
+        time_updated: now,
+      })
+    },
+  )
+  .delete(
+    "/project/:researchProjectId/relation",
+    describeRoute({
+      summary: "Delete atom relation",
+      description: "Delete a directed relation between two atoms in the same research project.",
+      operationId: "research.relation.delete",
+      responses: {
+        200: {
+          description: "Deleted relation",
+          content: {
+            "application/json": {
+              schema: resolver(atomRelationDeleteResponseSchema),
+            },
+          },
+        },
+        ...errors(404),
+      },
+    }),
+    validator("json", atomRelationDeleteSchema),
+    async (c) => {
+      const researchProjectId = c.req.param("researchProjectId")
+      const body = c.req.valid("json")
+
+      const source = Database.use((db) =>
+        db.select().from(AtomTable).where(eq(AtomTable.atom_id, body.source_atom_id)).get(),
+      )
+      if (!source || source.research_project_id !== researchProjectId) {
+        return c.json({ success: false, message: `source atom not found: ${body.source_atom_id}` }, 404)
+      }
+
+      const target = Database.use((db) =>
+        db.select().from(AtomTable).where(eq(AtomTable.atom_id, body.target_atom_id)).get(),
+      )
+      if (!target || target.research_project_id !== researchProjectId) {
+        return c.json({ success: false, message: `target atom not found: ${body.target_atom_id}` }, 404)
+      }
+
+      const existing = Database.use((db) =>
+        db
+          .select()
+          .from(AtomRelationTable)
+          .where(
+            and(
+              eq(AtomRelationTable.atom_id_source, body.source_atom_id),
+              eq(AtomRelationTable.atom_id_target, body.target_atom_id),
+              eq(AtomRelationTable.relation_type, body.relation_type),
+            ),
+          )
+          .get(),
+      )
+      if (!existing) {
+        return c.json({ success: false, message: "relation not found" }, 404)
+      }
+
+      Database.use((db) =>
+        db
+          .delete(AtomRelationTable)
+          .where(
+            and(
+              eq(AtomRelationTable.atom_id_source, body.source_atom_id),
+              eq(AtomRelationTable.atom_id_target, body.target_atom_id),
+              eq(AtomRelationTable.relation_type, body.relation_type),
+            ),
+          )
+          .run(),
+      )
+
+      await Bus.publish(Research.Event.AtomsUpdated, { researchProjectId })
+
+      return c.json({
+        source_atom_id: body.source_atom_id,
+        target_atom_id: body.target_atom_id,
+        relation_type: body.relation_type,
+        deleted: true as const,
       })
     },
   )

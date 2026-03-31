@@ -7,6 +7,7 @@ import { AtomGraphView } from "./atom-graph-view"
 
 type Atom = ResearchAtomsListResponse["atoms"][number]
 type Relation = ResearchAtomsListResponse["relations"][number]
+type RelationKind = "motivates" | "formalizes" | "derives" | "analyzes" | "validates" | "contradicts" | "other"
 
 const TYPE_LABELS: Record<string, string> = {
   fact: "Fact",
@@ -200,14 +201,31 @@ export function AtomsTab(props: { researchProjectId: string; currentSessionId?: 
       researchProjectId: props.researchProjectId,
       source_atom_id: input.sourceAtomId,
       target_atom_id: input.targetAtomId,
-      relation_type: input.relationType as
-        | "motivates"
-        | "formalizes"
-        | "derives"
-        | "analyzes"
-        | "validates"
-        | "contradicts"
-        | "other",
+      relation_type: input.relationType as RelationKind,
+    })
+  }
+
+  const handleRelationUpdate = async (input: {
+    sourceAtomId: string
+    targetAtomId: string
+    relationType: string
+    nextRelationType: string
+  }) => {
+    await sdk.client.research.relation.update({
+      researchProjectId: props.researchProjectId,
+      source_atom_id: input.sourceAtomId,
+      target_atom_id: input.targetAtomId,
+      relation_type: input.relationType as RelationKind,
+      next_relation_type: input.nextRelationType as RelationKind,
+    })
+  }
+
+  const handleRelationDelete = async (input: { sourceAtomId: string; targetAtomId: string; relationType: string }) => {
+    await sdk.client.research.relation.delete({
+      researchProjectId: props.researchProjectId,
+      source_atom_id: input.sourceAtomId,
+      target_atom_id: input.targetAtomId,
+      relation_type: input.relationType as RelationKind,
     })
   }
 
@@ -265,6 +283,8 @@ export function AtomsTab(props: { researchProjectId: string; currentSessionId?: 
                 onAtomClick={handleAtomClick}
                 onAtomDelete={handleAtomDelete}
                 onRelationCreate={handleRelationCreate}
+                onRelationUpdate={handleRelationUpdate}
+                onRelationDelete={handleRelationDelete}
                 researchProjectId={props.researchProjectId}
               />
             </div>

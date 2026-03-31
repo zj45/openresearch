@@ -78,6 +78,8 @@ import type {
   PermissionRespondResponses,
   PermissionRuleset,
   ProjectCurrentResponses,
+  ProjectDeleteErrors,
+  ProjectDeleteResponses,
   ProjectInitGitResponses,
   ProjectListResponses,
   ProjectUpdateErrors,
@@ -140,6 +142,10 @@ import type {
   ResearchProjectSessionTreeResponses,
   ResearchRelationCreateErrors,
   ResearchRelationCreateResponses,
+  ResearchRelationDeleteErrors,
+  ResearchRelationDeleteResponses,
+  ResearchRelationUpdateErrors,
+  ResearchRelationUpdateResponses,
   ResearchServerCreateResponses,
   ResearchServerDeleteErrors,
   ResearchServerDeleteResponses,
@@ -493,6 +499,40 @@ export class Project extends HeyApiClient {
     )
     return (options?.client ?? this.client).post<ProjectInitGitResponses, unknown, ThrowOnError>({
       url: "/project/git/init",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Delete project
+   *
+   * Delete a project and permanently remove all associated local session data.
+   */
+  public delete<ThrowOnError extends boolean = false>(
+    parameters: {
+      projectID: string
+      directory?: string
+      workspace?: string
+      removeLocal?: "true" | "false"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "projectID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "removeLocal" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<ProjectDeleteResponses, ProjectDeleteErrors, ThrowOnError>({
+      url: "/project/{projectID}",
       ...options,
       ...params,
     })
@@ -2573,6 +2613,102 @@ export class Atoms extends HeyApiClient {
 }
 
 export class Relation extends HeyApiClient {
+  /**
+   * Delete atom relation
+   *
+   * Delete a directed relation between two atoms in the same research project.
+   */
+  public delete<ThrowOnError extends boolean = false>(
+    parameters: {
+      researchProjectId: string
+      directory?: string
+      workspace?: string
+      source_atom_id?: string
+      target_atom_id?: string
+      relation_type?: "motivates" | "formalizes" | "derives" | "analyzes" | "validates" | "contradicts" | "other"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "researchProjectId" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "source_atom_id" },
+            { in: "body", key: "target_atom_id" },
+            { in: "body", key: "relation_type" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<
+      ResearchRelationDeleteResponses,
+      ResearchRelationDeleteErrors,
+      ThrowOnError
+    >({
+      url: "/research/project/{researchProjectId}/relation",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Update atom relation
+   *
+   * Update the type of an existing directed relation between two atoms in the same research project.
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      researchProjectId: string
+      directory?: string
+      workspace?: string
+      source_atom_id?: string
+      target_atom_id?: string
+      relation_type?: "motivates" | "formalizes" | "derives" | "analyzes" | "validates" | "contradicts" | "other"
+      next_relation_type?: "motivates" | "formalizes" | "derives" | "analyzes" | "validates" | "contradicts" | "other"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "researchProjectId" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "source_atom_id" },
+            { in: "body", key: "target_atom_id" },
+            { in: "body", key: "relation_type" },
+            { in: "body", key: "next_relation_type" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).patch<
+      ResearchRelationUpdateResponses,
+      ResearchRelationUpdateErrors,
+      ThrowOnError
+    >({
+      url: "/research/project/{researchProjectId}/relation",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
   /**
    * Create atom relation
    *

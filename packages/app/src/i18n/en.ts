@@ -347,6 +347,9 @@ export const dict = {
   "dialog.project.edit.worktree.startup": "Workspace startup script",
   "dialog.project.edit.worktree.startup.description": "Runs after creating a new workspace (worktree).",
   "dialog.project.edit.worktree.startup.placeholder": "e.g. bun install",
+  "dialog.project.delete.title": "Delete project",
+  "dialog.project.delete.confirm": 'Delete project "{{name}}"?',
+  "dialog.project.delete.description": "This permanently removes the project's sessions and related local metadata.",
 
   "dialog.releaseNotes.action.getStarted": "Get started",
   "dialog.releaseNotes.action.next": "Next",
@@ -848,6 +851,7 @@ export const dict = {
   "workspace.type.local": "local",
   "workspace.type.sandbox": "sandbox",
   "workspace.create.failed.title": "Failed to create workspace",
+  "project.delete.failed.title": "Failed to delete project",
   "workspace.delete.failed.title": "Failed to delete workspace",
   "workspace.resetting.title": "Resetting workspace",
   "workspace.resetting.description": "This may take a minute.",
