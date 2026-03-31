@@ -72,6 +72,7 @@ export function AtomGraphView(props: {
   let containerRef: HTMLDivElement | undefined
   let graph: Graph | undefined
   let stateManager: GraphStateManager
+  let ro: ResizeObserver | undefined
   let hoverId = ""
   let hoverRelationId = ""
   let hoverNodeId = ""
@@ -117,6 +118,33 @@ export function AtomGraphView(props: {
       evt.preventDefault()
     }
     setContainerReady(true)
+  }
+
+  const frame = () =>
+    new Promise<void>((resolve) => {
+      requestAnimationFrame(() => resolve())
+    })
+
+  const syncSize = () => {
+    if (!graph || !containerRef) return false
+
+    const width = containerRef.clientWidth
+    const height = containerRef.clientHeight
+
+    if (width <= 0 || height <= 0) return false
+
+    graph.resize(width, height)
+    return true
+  }
+
+  const fit = async () => {
+    if (!graph) return
+    if (!syncSize()) return
+
+    await frame()
+
+    if (!graph || !syncSize()) return
+    await graph.fitView()
   }
 
   const clearHideAnchor = () => {
@@ -390,6 +418,12 @@ export function AtomGraphView(props: {
 
   onMount(() => {
     stateManager = new GraphStateManager(props.researchProjectId)
+    if (!containerRef) return
+
+    ro = new ResizeObserver(() => {
+      syncSize()
+    })
+    ro.observe(containerRef)
   })
 
   const toGraphData = () => {
@@ -532,6 +566,7 @@ export function AtomGraphView(props: {
         data: toGraphData(),
         ...graphOptions,
       } as any)
+      syncSize()
 
       graph.on("node:click", (evt: any) => {
         if (state.dragging || state.active || state.confirmOpen) return
@@ -697,7 +732,7 @@ export function AtomGraphView(props: {
     try {
       graph.updateNodeData(filteredNodes)
       await graph.draw()
-      await graph.fitView()
+      await fit()
     } catch {}
   }
 
@@ -735,8 +770,10 @@ export function AtomGraphView(props: {
   const triggerAutoLayout = async () => {
     if (!graph || !stateManager) return
     stateManager.clearState()
+    if (!syncSize()) return
+    await frame()
     await graph.layout()
-    await graph.fitView()
+    await fit()
     await graph.render()
     saveCurrentState()
   }
@@ -804,6 +841,7 @@ export function AtomGraphView(props: {
 
   onCleanup(() => {
     clearHideAnchor()
+    ro?.disconnect()
     if (graph) {
       saveCurrentState()
     }
