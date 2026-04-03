@@ -1,8 +1,8 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "b2f507d7-c652-4eb2-9ab2-b4cdd1dad46b",
-  "prevIds": ["df95dc51-c4fe-4f02-b1c5-fdffdc438dbf"],
+  "id": "3f814dc3-ab54-4c0b-b67f-579808864c9f",
+  "prevIds": ["b2f507d7-c652-4eb2-9ab2-b4cdd1dad46b"],
   "ddl": [
     {
       "name": "workspace",
@@ -365,16 +365,6 @@
       "default": null,
       "generated": null,
       "name": "code_path",
-      "entityType": "columns",
-      "table": "article"
-    },
-    {
-      "type": "text",
-      "notNull": false,
-      "autoincrement": false,
-      "default": null,
-      "generated": null,
-      "name": "macro_table_path",
       "entityType": "columns",
       "table": "article"
     },
@@ -975,6 +965,16 @@
       "default": null,
       "generated": null,
       "name": "goal_path",
+      "entityType": "columns",
+      "table": "research_project"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "macro_table_path",
       "entityType": "columns",
       "table": "research_project"
     },
