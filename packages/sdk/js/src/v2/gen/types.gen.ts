@@ -4180,6 +4180,36 @@ export type ResearchAtomUpdateResponses = {
 
 export type ResearchAtomUpdateResponse = ResearchAtomUpdateResponses[keyof ResearchAtomUpdateResponses]
 
+export type ResearchUploadData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/research/upload"
+}
+
+export type ResearchUploadErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ResearchUploadError = ResearchUploadErrors[keyof ResearchUploadErrors]
+
+export type ResearchUploadResponses = {
+  /**
+   * Uploaded file paths
+   */
+  200: {
+    paths: Array<string>
+  }
+}
+
+export type ResearchUploadResponse = ResearchUploadResponses[keyof ResearchUploadResponses]
+
 export type ResearchProjectCreateData = {
   body?: {
     name: string

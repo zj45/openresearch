@@ -4,14 +4,14 @@ import { List } from "@opencode-ai/ui/list"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { Icon } from "@opencode-ai/ui/icon"
-import { base64Encode } from "@opencode-ai/util/encode"
+import { IconButton } from "@opencode-ai/ui/icon-button"
+import { Tag } from "@opencode-ai/ui/tag"
 import { getFilename } from "@opencode-ai/util/path"
-import { useNavigate } from "@solidjs/router"
-import { Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
+import { For, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js"
 import { useGlobalSDK } from "@/context/global-sdk"
 import { useGlobalSync } from "@/context/global-sync"
-import { useLayout } from "@/context/layout"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { useLanguage } from "@/context/language"
 
 function cleanInput(value: string) {
   const first = (value ?? "").split(/\r?\n/)[0] ?? ""
@@ -51,6 +51,7 @@ export type PathPickerProps = {
 export function DialogPathPicker(props: PathPickerProps) {
   const sdk = useGlobalSDK()
   const sync = useGlobalSync()
+  const language = useLanguage()
   const [filter, setFilter] = createSignal("")
   const [selected, setSelected] = createSignal<Set<string>>(new Set())
   const [validationError, setValidationError] = createSignal<string>()
@@ -136,6 +137,12 @@ export function DialogPathPicker(props: PathPickerProps) {
   const filtered = createMemo(() => {
     let list = items()
 
+    // Filter hidden files/directories
+    list = list.filter((item) => {
+      const name = item.path.split("/").pop() || item.path
+      return !name.startsWith(".")
+    })
+
     // Filter by search query
     const q = cleanInput(filter()).toLowerCase()
     if (q) {
@@ -156,31 +163,55 @@ export function DialogPathPicker(props: PathPickerProps) {
     return list
   })
 
-  const canPick = (item: ListItem) => item.type === "file" || (props.allowDirs && item.type === "directory")
+  const canPick = (item: ListItem) => {
+    if (props.mode === "directories") return item.type === "directory"
+    return item.type === "file" || (props.allowDirs && item.type === "directory")
+  }
+
+  // 用延时区分单击和双击，避免双击进入目录时误触发选中
+  let clickTimer: ReturnType<typeof setTimeout> | null = null
 
   const handleItemClick = (item: ListItem) => {
-    if (item.type === "directory" && props.mode === "files" && !props.allowDirs) {
+    if (clickTimer) {
+      clearTimeout(clickTimer)
+      clickTimer = null
+    }
+
+    clickTimer = setTimeout(() => {
+      clickTimer = null
+
+      if (!canPick(item)) {
+        if (item.type === "directory") enterDir(item.path)
+        return
+      }
+
+      if (!props.multiple) {
+        setSelected((prev) => {
+          const next = new Set<string>()
+          if (!prev.has(item.path)) next.add(item.path)
+          return next
+        })
+      } else {
+        setSelected((prev) => {
+          const next = new Set(prev)
+          if (next.has(item.path)) next.delete(item.path)
+          else next.add(item.path)
+          return next
+        })
+      }
+
+      setValidationError(undefined)
+    }, 200)
+  }
+
+  const handleItemDblClick = (item: ListItem) => {
+    if (clickTimer) {
+      clearTimeout(clickTimer)
+      clickTimer = null
+    }
+    if (item.type === "directory") {
       enterDir(item.path)
-      return
     }
-
-    if (!canPick(item)) return
-
-    if (!props.multiple) {
-      props.onSelect(item.path)
-      props.onClose()
-      return
-    }
-
-    setSelected((prev) => {
-      const next = new Set(prev)
-      if (next.has(item.path)) next.delete(item.path)
-      else next.add(item.path)
-      return next
-    })
-
-    // Clear validation error when selection changes
-    setValidationError(undefined)
   }
 
   const confirm = async () => {
@@ -215,7 +246,11 @@ export function DialogPathPicker(props: PathPickerProps) {
   }
 
   return (
-    <Dialog title={props.title} class="w-full max-w-[560px] max-h-[60vh] mx-auto flex flex-col">
+    <Dialog
+      title={props.title}
+      action={<IconButton icon="close" variant="ghost" onClick={props.onClose} />}
+      class="w-full max-w-[560px] max-h-[60vh] mx-auto flex flex-col"
+    >
       <div class="flex flex-col gap-3 p-4 min-h-0 flex-1">
         <div class="flex items-center gap-2 shrink-0">
           <Button variant="ghost" onClick={goUp} disabled={cwd() === "/"} class="shrink-0 px-2">
@@ -225,78 +260,54 @@ export function DialogPathPicker(props: PathPickerProps) {
         </div>
 
         <div class="shrink-0">
-          <TextField label="搜索" placeholder="输入文件名搜索" value={filter()} onChange={setFilter} autoFocus />
+          <TextField label={language.t("pathPicker.search")} placeholder={language.t("pathPicker.search.placeholder")} value={filter()} onChange={setFilter} autoFocus />
         </div>
 
         <List
           class="flex-1 min-h-0 [&_[data-slot=list-scroll]]:flex-1 [&_[data-slot=list-scroll]]:min-h-0"
           items={filtered}
           key={(item) => item.path}
-          emptyMessage="无匹配结果"
-          loadingMessage="加载中..."
+          emptyMessage={language.t("pathPicker.empty")}
+          loadingMessage={language.t("pathPicker.loading")}
           onSelect={(item) => item && handleItemClick(item)}
         >
           {(item) => (
-            <div class="flex items-center justify-between rounded-md px-2 py-1 hover:bg-surface-strong/40 cursor-pointer">
-              <div class="flex items-center gap-3 min-w-0">
-                <FileIcon node={{ path: item.path, type: item.type }} class="shrink-0 size-4" />
-                <div class="flex items-center text-14-regular min-w-0 gap-1">
-                  <span class="text-text-weak truncate">{getFilename(item.path)}</span>
-                  <Show when={item.type === "directory"}>
-                    <span class="text-text-weak text-11-regular">/</span>
-                  </Show>
-                </div>
-              </div>
-              <div class="flex items-center gap-2 shrink-0">
-                <Show when={item.type === "directory" && props.mode === "files"}>
-                  <Button
-                    variant="ghost"
-                    onClick={(e: MouseEvent) => {
-                      e.stopPropagation()
-                      enterDir(item.path)
-                    }}
-                    class="px-2"
-                  >
-                    进入
-                  </Button>
-                </Show>
-                <Show when={props.multiple && canPick(item)}>
-                  <input type="checkbox" class="shrink-0" checked={selected().has(item.path)} />
+            <div
+              class={`w-full flex items-center gap-3 cursor-pointer rounded-md px-2 py-1 transition-colors ${
+                selected().has(item.path) ? "bg-surface-weak" : ""
+              }`}
+              onDblClick={() => handleItemDblClick(item)}
+            >
+              <FileIcon node={{ path: item.path, type: item.type }} class="shrink-0 size-4" />
+              <div class="flex items-center text-14-regular min-w-0 gap-1">
+                <span class="text-text-weak truncate">
+                  {(() => {
+                    const q = cleanInput(filter())
+                    if (!q) return getFilename(item.path)
+                    const base = cwd()
+                    const prefix = base.endsWith("/") ? base : base + "/"
+                    return item.path.startsWith(prefix) ? item.path.slice(prefix.length) : getFilename(item.path)
+                  })()}
+                </span>
+                <Show when={item.type === "directory"}>
+                  <span class="text-text-weak text-11-regular">/</span>
                 </Show>
               </div>
             </div>
           )}
         </List>
 
-        <Show when={props.multiple}>
-          <Show when={validationError()}>
-            <div class="text-12-regular text-icon-critical-base px-2">{validationError()}</div>
-          </Show>
-          <div class="flex justify-end gap-2 pt-2">
-            <Button variant="ghost" onClick={cancel}>
-              取消
-            </Button>
-            <Button onClick={confirm} disabled={selected().size === 0 || isValidating() || !!validationError()}>
-              {isValidating() ? "验证中..." : `确认选择 (${selected().size})`}
-            </Button>
-          </div>
+        <Show when={validationError()}>
+          <div class="text-12-regular text-icon-critical-base px-2">{validationError()}</div>
         </Show>
-
-        <Show when={props.mode === "directories" && !props.multiple}>
-          <div class="flex justify-end gap-2 pt-2">
-            <Button variant="ghost" onClick={props.onClose}>
-              取消
-            </Button>
-            <Button
-              onClick={() => {
-                props.onSelect(cwd())
-                props.onClose()
-              }}
-            >
-              选择此文件夹
-            </Button>
-          </div>
-        </Show>
+        <div class="flex justify-end gap-2 pt-2">
+          <Button variant="ghost" onClick={cancel}>
+            {language.t("pathPicker.cancel")}
+          </Button>
+          <Button onClick={confirm} disabled={selected().size === 0 || isValidating() || !!validationError()}>
+            {isValidating() ? language.t("pathPicker.validating") : language.t("pathPicker.confirm", { count: String(selected().size) })}
+          </Button>
+        </div>
       </div>
     </Dialog>
   )
@@ -309,15 +320,33 @@ interface DialogNewResearchProjectProps {
 export function DialogNewResearchProject(props: DialogNewResearchProjectProps) {
   const dialog = useDialog()
   const sdk = useGlobalSDK()
+  const sync = useGlobalSync()
+  const language = useLanguage()
+  const defaultDir = () => sync.data.path.home || sync.data.path.directory || ""
 
-  const [name, setName] = createSignal("")
-  const [targetDir, setTargetDir] = createSignal("")
+  const [name, setName] = createSignal("research_project_1")
+  const [targetDir, setTargetDir] = createSignal(defaultDir())
   const [paperPaths, setPaperPaths] = createSignal<string[]>([])
-  const [backgroundPath, setBackgroundPath] = createSignal<string>()
-  const [goalPath, setGoalPath] = createSignal<string>()
-  const [picker, setPicker] = createSignal<null | "target" | "papers" | "background" | "goal">(null)
+  const [picker, setPicker] = createSignal<null | "target" | "papers">(null)
   const [submitting, setSubmitting] = createSignal(false)
   const [error, setError] = createSignal<string>()
+  const [dragging, setDragging] = createSignal(false)
+
+  // 自动生成不重复的默认项目名
+  createEffect(() => {
+    const dir = defaultDir()
+    if (!dir) return
+    setTargetDir(dir)
+    sdk.client.file
+      .list({ directory: dir, path: "" })
+      .then((res) => {
+        const existing = new Set((res.data ?? []).map((n) => n.name))
+        let idx = 1
+        while (existing.has(`research_project_${idx}`)) idx++
+        setName(`research_project_${idx}`)
+      })
+      .catch(() => {})
+  })
 
   const canSubmit = createMemo(() => {
     const title = name().trim()
@@ -326,20 +355,69 @@ export function DialogNewResearchProject(props: DialogNewResearchProjectProps) {
     return !!title && !!target && papers.length > 0
   })
 
-  const reset = () => {
-    setName("")
-    setTargetDir("")
-    setPaperPaths([])
-    setBackgroundPath(undefined)
-    setGoalPath(undefined)
-    setPicker(null)
-    setError(undefined)
-  }
-
   let isMounted = true
   onCleanup(() => {
     isMounted = false
   })
+
+  const addPapers = (paths: string[]) => {
+    setPaperPaths((prev) => {
+      const existing = new Set(prev)
+      const newPaths = paths.filter((p) => !existing.has(p))
+      return [...prev, ...newPaths]
+    })
+  }
+
+  const removePaper = (path: string) => {
+    setPaperPaths((prev) => prev.filter((p) => p !== path))
+  }
+
+  const handleDragOver = (e: DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragging(true)
+  }
+
+  const handleDragLeave = (e: DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragging(false)
+  }
+
+  const uploadFiles = async (files: File[]) => {
+    if (files.length === 0) return
+    const formData = new FormData()
+    for (const file of files) {
+      formData.append("files", file)
+    }
+    const res = await sdk.client.research.upload(undefined, {
+      body: formData as unknown,
+      bodySerializer: null,
+      headers: { "Content-Type": null },
+    } as any)
+    const data = res.data as { paths: string[] } | undefined
+    if (!data?.paths?.length) throw new Error(language.t("research.new.upload.failed"))
+    addPapers(data.paths)
+  }
+
+  const handleDrop = (e: DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setDragging(false)
+
+    const dt = e.dataTransfer
+    if (!dt?.files?.length) return
+
+    const files = Array.from(dt.files).filter((f) => f.name.toLowerCase().endsWith(".pdf"))
+    if (files.length === 0) return
+    uploadFiles(files).catch((err) => {
+      setError(err instanceof Error ? err.message : language.t("research.new.upload.failed"))
+    })
+  }
+
+  const handlePickPapers = () => {
+    setPicker("papers")
+  }
 
   async function handleCreate() {
     if (!canSubmit()) return
@@ -352,11 +430,10 @@ export function DialogNewResearchProject(props: DialogNewResearchProjectProps) {
       name: projectName,
       targetPath: fullPath,
       papers: paperPaths(),
-      backgroundPath: backgroundPath(),
-      goalPath: goalPath(),
+      backgroundPath: undefined,
+      goalPath: undefined,
     }
 
-    // 保存当前的目标路径，避免在异步回调中访问 signal
     const currentTargetDir = fullPath
 
     setSubmitting(true)
@@ -369,12 +446,12 @@ export function DialogNewResearchProject(props: DialogNewResearchProjectProps) {
 
       const projectID = res?.data?.project_id
       const researchID = res?.data?.research_project_id
-      if (!projectID || !researchID) throw new Error("创建科研项目失败")
+      if (!projectID || !researchID) throw new Error(language.t("research.new.create.failed"))
 
       props.onSelect(currentTargetDir)
     } catch (err: unknown) {
       if (!isMounted) return
-      const message = err instanceof Error ? err.message : "创建失败"
+      const message = err instanceof Error ? err.message : language.t("research.new.create.error")
       setError(message)
     } finally {
       if (isMounted) {
@@ -385,81 +462,134 @@ export function DialogNewResearchProject(props: DialogNewResearchProjectProps) {
 
   return (
     <>
-      <Dialog title="新建科研项目" class="w-full max-w-[600px] mx-auto">
-        <div class="flex flex-col gap-5 p-6 pt-0 max-h-[70vh] overflow-y-auto pr-1">
-          <TextField label="科研项目名" placeholder="请输入科研项目名称" value={name()} onChange={setName} />
-
-          <div class="flex flex-col gap-2">
-            <label class="text-12-medium text-text-strong">创建位置</label>
-            <div class="flex items-center gap-2">
+      <Dialog title={language.t("research.new.title")} fit class="w-full max-w-[640px] mx-auto">
+        <div class="flex flex-col gap-5 px-6 pb-6 pt-1 max-h-[75vh] overflow-y-auto">
+          {/* Project info section */}
+          <div class="bg-surface-raised-base rounded-lg px-4">
+            <div class="py-3 border-b border-border-weak-base">
               <TextField
-                value={targetDir()}
-                placeholder="请输入或选择项目创建位置"
-                onChange={setTargetDir}
-                class="flex-1"
+                label={language.t("research.new.name.label")}
+                placeholder={language.t("research.new.name.placeholder")}
+                value={name()}
+                onChange={setName}
               />
-              <Button variant="ghost" onClick={() => setTargetDir("")}>
-                清除
-              </Button>
-              <Button variant="secondary" onClick={() => setPicker("target")}>
-                选择文件夹
-              </Button>
             </div>
-            <div class="text-12-regular text-text-weak">支持手动输入，也支持搜索文件夹后选择创建位置</div>
+            <div class="py-3">
+              <label class="text-12-medium text-text-weak mb-1.5 block">{language.t("research.new.location.label")}</label>
+              <div class="flex items-center gap-2">
+                <TextField
+                  value={targetDir()}
+                  placeholder={language.t("research.new.location.placeholder")}
+                  onChange={setTargetDir}
+                  class="flex-1"
+                />
+                <Button variant="secondary" onClick={() => setPicker("target")}>
+                  {language.t("research.new.location.select")}
+                </Button>
+              </div>
+            </div>
           </div>
 
-          <div class="flex flex-col gap-2">
-            <label class="text-12-medium text-text-strong">论文源（可多选 PDF 或 LaTeX 文件夹）</label>
-            <div class="flex items-center gap-2">
-              <TextField value={paperPaths().join(", ") || ""} placeholder="请选择论文源路径" readOnly class="flex-1" />
-              <Button variant="ghost" onClick={() => setPaperPaths([])}>
-                清除
-              </Button>
-              <Button variant="secondary" onClick={() => setPicker("papers")}>
-                选择文件或文件夹
-              </Button>
+          {/* 拖拽上传区域 */}
+          <div
+            class={`flex flex-col items-center justify-center gap-3 rounded-xl border-2 border-dashed p-8 cursor-pointer transition-all ${
+              dragging()
+                ? "border-accent-base bg-accent-base/10 scale-[1.01]"
+                : "border-border-base bg-surface-inset-base hover:border-accent-base/50 hover:bg-surface-inset-base/80"
+            }`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            onClick={handlePickPapers}
+          >
+            <div
+              class={`flex items-center justify-center size-10 rounded-lg transition-colors ${
+                dragging() ? "bg-accent-base/20 text-accent-base" : "bg-surface-raised-base text-text-weak"
+              }`}
+            >
+              <Icon name="cloud-upload" />
             </div>
-            <div class="text-12-regular text-text-weak">支持一次选择多篇 PDF，或选择 LaTeX 源码文件夹</div>
+            <div class="text-13-regular text-text-weak text-center">
+              {(() => {
+                const raw = language.t("research.new.drop.hint")
+                const match = raw.match(/^(.*)<1>(.*)<\/1>(.*)$/)
+                if (!match) return raw
+                return (
+                  <>
+                    {match[1]}
+                    <span class="text-accent-base cursor-pointer hover:underline font-medium">{match[2]}</span>
+                    {match[3]}
+                  </>
+                )
+              })()}
+            </div>
+            <div class="text-11-regular text-text-weaker">{language.t("research.new.drop.note")}</div>
           </div>
 
-          <div class="flex flex-col gap-2">
-            <label class="text-12-medium text-text-strong">科研背景（可选，Markdown）</label>
-            <div class="flex items-center gap-2">
-              <TextField value={backgroundPath() ?? ""} placeholder="不上传则由 AI 自动生成" readOnly class="flex-1" />
-              <Button variant="ghost" onClick={() => setBackgroundPath(undefined)}>
-                清除
-              </Button>
-              <Button variant="secondary" onClick={() => setPicker("background")}>
-                选择文件
-              </Button>
+          {/* 已选论文列表 */}
+          <div class="flex flex-col rounded-lg bg-surface-raised-base overflow-hidden">
+            <div class="flex items-center justify-between px-4 py-2.5 border-b border-border-weak-base">
+              <div class="flex items-center gap-2">
+                <Icon name="bullet-list" size="small" class="text-text-weak" />
+                <span class="text-12-medium text-text-strong">{language.t("research.new.papers.label")}</span>
+              </div>
+              <Show when={paperPaths().length > 0}>
+                <Tag>{paperPaths().length}</Tag>
+              </Show>
             </div>
-            <div class="text-12-regular text-text-weak">不上传则由 AI 自动生成背景</div>
-          </div>
-
-          <div class="flex flex-col gap-2">
-            <label class="text-12-medium text-text-strong">科研目标（可选，Markdown）</label>
-            <div class="flex items-center gap-2">
-              <TextField value={goalPath() ?? ""} placeholder="不上传则由 AI 自动生成" readOnly class="flex-1" />
-              <Button variant="ghost" onClick={() => setGoalPath(undefined)}>
-                清除
-              </Button>
-              <Button variant="secondary" onClick={() => setPicker("goal")}>
-                选择文件
-              </Button>
+            <div class="min-h-[100px] max-h-[200px] overflow-y-auto">
+              <Show
+                when={paperPaths().length > 0}
+                fallback={
+                  <div class="flex flex-col items-center justify-center gap-1.5 h-full min-h-[100px] py-6">
+                    <Icon name="file-tree" class="text-text-weaker" />
+                    <span class="text-12-regular text-text-weaker">{language.t("research.new.papers.empty")}</span>
+                  </div>
+                }
+              >
+                <div class="flex flex-col px-1 py-1">
+                  <For each={paperPaths()}>
+                    {(path) => (
+                      <div class="flex items-center justify-between gap-2 px-3 py-2 rounded-md hover:bg-surface-strong/40 group transition-colors">
+                        <div class="flex items-center gap-2.5 min-w-0">
+                          <FileIcon
+                            node={{ path, type: path.endsWith(".pdf") ? "file" : "directory" }}
+                            class="shrink-0 size-4"
+                          />
+                          <span class="text-13-regular text-text-base truncate">{path.split("/").pop() || path}</span>
+                        </div>
+                        <IconButton
+                          icon="close-small"
+                          variant="ghost"
+                          onClick={(e: MouseEvent) => {
+                            e.stopPropagation()
+                            removePaper(path)
+                          }}
+                          class="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+                        />
+                      </div>
+                    )}
+                  </For>
+                </div>
+              </Show>
             </div>
-            <div class="text-12-regular text-text-weak">不上传则由 AI 自动生成目标</div>
           </div>
 
           <Show when={error()} keyed>
-            {(err) => <div class="text-12-regular text-icon-critical-strong">{err}</div>}
+            {(err) => (
+              <div class="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-surface-critical-weak">
+                <Icon name="warning" size="small" class="text-icon-critical-base shrink-0" />
+                <span class="text-12-regular text-text-strong">{err}</span>
+              </div>
+            )}
           </Show>
 
-          <div class="flex justify-end gap-2 pt-2">
-            <Button variant="ghost" onClick={() => dialog.close()}>
-              取消
+          <div class="flex justify-end gap-2 border-t border-border-weak-base pt-4">
+            <Button variant="ghost" size="large" onClick={() => dialog.close()}>
+              {language.t("research.new.cancel")}
             </Button>
-            <Button onClick={handleCreate} disabled={!canSubmit() || submitting()} loading={submitting()}>
-              创建
+            <Button size="large" onClick={handleCreate} disabled={!canSubmit() || submitting()} loading={submitting()}>
+              {language.t("research.new.create")}
             </Button>
           </div>
         </div>
@@ -467,7 +597,7 @@ export function DialogNewResearchProject(props: DialogNewResearchProjectProps) {
 
       <Show when={picker() === "target"}>
         <DialogPathPicker
-          title="选择创建位置"
+          title={language.t("research.new.picker.location")}
           mode="directories"
           startDir={() => targetDir() || undefined}
           onSelect={(v) => setTargetDir(Array.isArray(v) ? v[0] : v)}
@@ -477,32 +607,12 @@ export function DialogNewResearchProject(props: DialogNewResearchProjectProps) {
 
       <Show when={picker() === "papers"}>
         <DialogPathPicker
-          title="选择论文源 (PDF 或 LaTeX 文件夹，可多选)"
+          title={language.t("research.new.picker.papers")}
           mode="files"
           multiple
           acceptExt={[".pdf"]}
           allowDirs
-          onSelect={(v) => setPaperPaths(Array.isArray(v) ? v : [v])}
-          onClose={() => setPicker(null)}
-        />
-      </Show>
-
-      <Show when={picker() === "background"}>
-        <DialogPathPicker
-          title="选择科研背景 (Markdown)"
-          mode="files"
-          acceptExt={[".md"]}
-          onSelect={(v) => setBackgroundPath(Array.isArray(v) ? v[0] : v)}
-          onClose={() => setPicker(null)}
-        />
-      </Show>
-
-      <Show when={picker() === "goal"}>
-        <DialogPathPicker
-          title="选择科研目标 (Markdown)"
-          mode="files"
-          acceptExt={[".md"]}
-          onSelect={(v) => setGoalPath(Array.isArray(v) ? v[0] : v)}
+          onSelect={(v) => addPapers(Array.isArray(v) ? v : [v])}
           onClose={() => setPicker(null)}
         />
       </Show>

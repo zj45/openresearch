@@ -2,6 +2,7 @@ import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
+import { Icon } from "@opencode-ai/ui/icon"
 import { List } from "@opencode-ai/ui/list"
 import type { ListRef } from "@opencode-ai/ui/list"
 import { getDirectory, getFilename } from "@opencode-ai/util/path"
@@ -325,20 +326,19 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
 
   return (
     <Dialog title={props.title ?? language.t("command.project.open")}>
-      <div class="flex flex-col gap-3 px-4 pt-4 pb-4 border-b border-border-weak-base ">
-        <div class="flex items-start justify-between gap-3">
-          <div class="flex flex-col gap-1">
-            <div class="text-14-medium text-text-strong">新建科研项目</div>
-            <div class="text-12-regular text-text-weak">导入论文、可选背景与目标，快速开始新课题</div>
+      <div class="px-4 pt-4 pb-3">
+        <div
+          class="flex items-center gap-3 px-4 py-3 rounded-lg bg-surface-raised-base hover:bg-surface-base-hover cursor-pointer transition-colors border border-border-weak-base"
+          onClick={() => dialog.show(() => <DialogNewResearchProject onSelect={resolve} />)}
+        >
+          <div class="flex items-center justify-center size-8 rounded-md bg-accent-base/10 text-accent-base shrink-0">
+            <Icon name="experiment" size="small" />
           </div>
-          <Button
-            variant="primary"
-            icon="plus-small"
-            class="shrink-0"
-            onClick={() => dialog.show(() => <DialogNewResearchProject onSelect={resolve} />)}
-          >
-            新建
-          </Button>
+          <div class="flex flex-col gap-0.5 min-w-0 flex-1">
+            <span class="text-13-medium text-text-strong">{language.t("research.new.entry.title")}</span>
+            <span class="text-11-regular text-text-weak">{language.t("research.new.entry.description")}</span>
+          </div>
+          <Icon name="plus-small" class="text-text-weak shrink-0" />
         </div>
       </div>
 

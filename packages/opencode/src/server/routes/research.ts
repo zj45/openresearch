@@ -2,6 +2,7 @@ import { describeRoute, resolver, validator } from "hono-openapi"
 import { Hono } from "hono"
 import z from "zod"
 import path from "path"
+import os from "os"
 import { Filesystem } from "@/util/filesystem"
 import { Database } from "@/storage/db"
 import { Project } from "@/project/project"
@@ -783,6 +784,56 @@ export const ResearchRoutes = new Hono()
 
       const updated = Database.use((db) => db.select().from(AtomTable).where(eq(AtomTable.atom_id, atomId)).get())!
       return c.json(updated)
+    },
+  )
+  .post(
+    "/upload",
+    describeRoute({
+      summary: "Upload files",
+      description: "Upload files to a temporary directory and return their server-side paths.",
+      operationId: "research.upload",
+      responses: {
+        200: {
+          description: "Uploaded file paths",
+          content: {
+            "application/json": {
+              schema: resolver(
+                z.object({
+                  paths: z.array(z.string()),
+                }),
+              ),
+            },
+          },
+        },
+        ...errors(400),
+      },
+    }),
+    async (c) => {
+      const formData = await c.req.formData()
+      const files = formData.getAll("files")
+
+      if (files.length === 0) {
+        return c.json({ success: false, message: "no files provided" }, 400)
+      }
+
+      const uploadDir = path.join(os.tmpdir(), "opencode-uploads", uniqueID())
+      await fs.promises.mkdir(uploadDir, { recursive: true })
+
+      const paths: string[] = []
+      for (const file of files) {
+        if (!(file instanceof File)) continue
+        if (!file.name.toLowerCase().endsWith(".pdf")) continue
+        const dest = path.join(uploadDir, file.name)
+        const buffer = Buffer.from(await file.arrayBuffer())
+        await fs.promises.writeFile(dest, buffer)
+        paths.push(dest)
+      }
+
+      if (paths.length === 0) {
+        return c.json({ success: false, message: "no valid PDF files in upload" }, 400)
+      }
+
+      return c.json({ paths })
     },
   )
   .post(
