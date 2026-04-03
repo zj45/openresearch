@@ -158,6 +158,8 @@ import type {
   ResearchServerListResponses,
   ResearchSessionAtomGetErrors,
   ResearchSessionAtomGetResponses,
+  ResearchUploadErrors,
+  ResearchUploadResponses,
   SessionAbortErrors,
   SessionAbortResponses,
   SessionChildrenErrors,
@@ -3498,6 +3500,36 @@ export class ExperimentWatch extends HeyApiClient {
 }
 
 export class Research extends HeyApiClient {
+  /**
+   * Upload files
+   *
+   * Upload files to a temporary directory and return their server-side paths.
+   */
+  public upload<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<ResearchUploadResponses, ResearchUploadErrors, ThrowOnError>({
+      url: "/research/upload",
+      ...options,
+      ...params,
+    })
+  }
+
   /**
    * List available code paths
    *
