@@ -897,6 +897,13 @@ export const ResearchRoutes = new Hono()
         project = await Project.fromDirectory(target)
         if (project.project.id === "global") throw new Error("failed to resolve initialized project id")
 
+        // Invalidate Instance cache so subsequent requests return the correct project ID
+        await Instance.reload({
+          directory: target,
+          worktree: target,
+          project: project.project,
+        }).catch(() => {})
+
         const existing = Database.use((db) =>
           db
             .select({ research_project_id: ResearchProjectTable.research_project_id })
