@@ -3912,6 +3912,57 @@ export type ResearchAtomsListResponses = {
 
 export type ResearchAtomsListResponse = ResearchAtomsListResponses[keyof ResearchAtomsListResponses]
 
+export type ResearchAtomCreateData = {
+  body?: {
+    name: string
+    type: "fact" | "method" | "theorem" | "verification"
+  }
+  path: {
+    researchProjectId: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/research/project/{researchProjectId}/atom"
+}
+
+export type ResearchAtomCreateErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * Not found
+   */
+  404: NotFoundError
+}
+
+export type ResearchAtomCreateError = ResearchAtomCreateErrors[keyof ResearchAtomCreateErrors]
+
+export type ResearchAtomCreateResponses = {
+  /**
+   * Created atom
+   */
+  200: {
+    atom_id: string
+    research_project_id: string
+    atom_name: string
+    atom_type: string
+    atom_claim_path: string | null
+    atom_evidence_type: string
+    atom_evidence_status: string
+    atom_evidence_path: string | null
+    atom_evidence_assessment_path: string | null
+    article_id: string | null
+    session_id: string | null
+    time_created: number
+    time_updated: number
+  }
+}
+
+export type ResearchAtomCreateResponse = ResearchAtomCreateResponses[keyof ResearchAtomCreateResponses]
+
 export type ResearchRelationDeleteData = {
   body?: {
     source_atom_id: string

@@ -109,6 +109,8 @@ import type {
   QuestionReplyResponses,
   ResearchArticleCreateErrors,
   ResearchArticleCreateResponses,
+  ResearchAtomCreateErrors,
+  ResearchAtomCreateResponses,
   ResearchAtomDeleteErrors,
   ResearchAtomDeleteResponses,
   ResearchAtomSessionCreateErrors,
@@ -2616,6 +2618,169 @@ export class Atoms extends HeyApiClient {
   }
 }
 
+export class Session3 extends HeyApiClient {
+  /**
+   * Create or get session for an atom
+   *
+   * If the atom already has a session, returns its session ID. Otherwise creates a new session and binds it to the atom.
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters: {
+      atomId: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "atomId" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      ResearchAtomSessionCreateResponses,
+      ResearchAtomSessionCreateErrors,
+      ThrowOnError
+    >({
+      url: "/research/atom/{atomId}/session",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class Atom extends HeyApiClient {
+  /**
+   * Create atom
+   *
+   * Create a lightweight atom with starter claim and evidence files.
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters: {
+      researchProjectId: string
+      directory?: string
+      workspace?: string
+      name?: string
+      type?: "fact" | "method" | "theorem" | "verification"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "researchProjectId" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "name" },
+            { in: "body", key: "type" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<ResearchAtomCreateResponses, ResearchAtomCreateErrors, ThrowOnError>({
+      url: "/research/project/{researchProjectId}/atom",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Delete atom
+   *
+   * Delete one atom and all relations pointing to or from it.
+   */
+  public delete<ThrowOnError extends boolean = false>(
+    parameters: {
+      researchProjectId: string
+      atomId: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "researchProjectId" },
+            { in: "path", key: "atomId" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<ResearchAtomDeleteResponses, ResearchAtomDeleteErrors, ThrowOnError>(
+      {
+        url: "/research/project/{researchProjectId}/atom/{atomId}",
+        ...options,
+        ...params,
+      },
+    )
+  }
+
+  /**
+   * Update an atom's mutable fields
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      researchProjectId: string
+      atomId: string
+      directory?: string
+      workspace?: string
+      evidence_status?: "pending" | "in_progress" | "proven" | "disproven"
+      evidence_type?: "math" | "experiment"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "researchProjectId" },
+            { in: "path", key: "atomId" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "evidence_status" },
+            { in: "body", key: "evidence_type" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).patch<ResearchAtomUpdateResponses, ResearchAtomUpdateErrors, ThrowOnError>({
+      url: "/research/research/{researchProjectId}/atom/{atomId}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  private _session?: Session3
+  get session(): Session3 {
+    return (this._session ??= new Session3({ client: this.client }))
+  }
+}
+
 export class Relation extends HeyApiClient {
   /**
    * Delete atom relation
@@ -2760,128 +2925,6 @@ export class Relation extends HeyApiClient {
         ...params.headers,
       },
     })
-  }
-}
-
-export class Session3 extends HeyApiClient {
-  /**
-   * Create or get session for an atom
-   *
-   * If the atom already has a session, returns its session ID. Otherwise creates a new session and binds it to the atom.
-   */
-  public create<ThrowOnError extends boolean = false>(
-    parameters: {
-      atomId: string
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "atomId" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<
-      ResearchAtomSessionCreateResponses,
-      ResearchAtomSessionCreateErrors,
-      ThrowOnError
-    >({
-      url: "/research/atom/{atomId}/session",
-      ...options,
-      ...params,
-    })
-  }
-}
-
-export class Atom extends HeyApiClient {
-  /**
-   * Delete atom
-   *
-   * Delete one atom and all relations pointing to or from it.
-   */
-  public delete<ThrowOnError extends boolean = false>(
-    parameters: {
-      researchProjectId: string
-      atomId: string
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "researchProjectId" },
-            { in: "path", key: "atomId" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).delete<ResearchAtomDeleteResponses, ResearchAtomDeleteErrors, ThrowOnError>(
-      {
-        url: "/research/project/{researchProjectId}/atom/{atomId}",
-        ...options,
-        ...params,
-      },
-    )
-  }
-
-  /**
-   * Update an atom's mutable fields
-   */
-  public update<ThrowOnError extends boolean = false>(
-    parameters: {
-      researchProjectId: string
-      atomId: string
-      directory?: string
-      workspace?: string
-      evidence_status?: "pending" | "in_progress" | "proven" | "disproven"
-      evidence_type?: "math" | "experiment"
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "researchProjectId" },
-            { in: "path", key: "atomId" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "body", key: "evidence_status" },
-            { in: "body", key: "evidence_type" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).patch<ResearchAtomUpdateResponses, ResearchAtomUpdateErrors, ThrowOnError>({
-      url: "/research/research/{researchProjectId}/atom/{atomId}",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-
-  private _session?: Session3
-  get session(): Session3 {
-    return (this._session ??= new Session3({ client: this.client }))
   }
 }
 
@@ -3495,14 +3538,14 @@ export class Research extends HeyApiClient {
     return (this._atoms ??= new Atoms({ client: this.client }))
   }
 
-  private _relation?: Relation
-  get relation(): Relation {
-    return (this._relation ??= new Relation({ client: this.client }))
-  }
-
   private _atom?: Atom
   get atom(): Atom {
     return (this._atom ??= new Atom({ client: this.client }))
+  }
+
+  private _relation?: Relation
+  get relation(): Relation {
+    return (this._relation ??= new Relation({ client: this.client }))
   }
 
   private _article?: Article

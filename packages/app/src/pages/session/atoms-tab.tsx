@@ -7,6 +7,7 @@ import { AtomGraphView } from "./atom-graph-view"
 
 type Atom = ResearchAtomsListResponse["atoms"][number]
 type Relation = ResearchAtomsListResponse["relations"][number]
+type AtomKind = "fact" | "method" | "theorem" | "verification"
 type RelationKind = "motivates" | "formalizes" | "derives" | "analyzes" | "validates" | "contradicts" | "other"
 
 const TYPE_LABELS: Record<string, string> = {
@@ -236,6 +237,18 @@ export function AtomsTab(props: { researchProjectId: string; currentSessionId?: 
     })
   }
 
+  const handleAtomCreate = async (input: { name: string; type: AtomKind }) => {
+    const res = await sdk.client.research.atom.create({
+      researchProjectId: props.researchProjectId,
+      name: input.name,
+      type: input.type,
+    })
+    if (!res.data) {
+      throw new Error("Failed to create atom")
+    }
+    return res.data
+  }
+
   return (
     <div class="relative flex-1 min-h-0 overflow-hidden h-full flex flex-col">
       <div class="px-3 pt-3 pb-1 flex items-center justify-between">
@@ -281,6 +294,7 @@ export function AtomsTab(props: { researchProjectId: string; currentSessionId?: 
                 loading={loading()}
                 error={error()}
                 onAtomClick={handleAtomClick}
+                onAtomCreate={handleAtomCreate}
                 onAtomDelete={handleAtomDelete}
                 onRelationCreate={handleRelationCreate}
                 onRelationUpdate={handleRelationUpdate}

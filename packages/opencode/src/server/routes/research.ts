@@ -203,6 +203,11 @@ const atomRelationCreateSchema = z.object({
   note: z.string().optional(),
 })
 
+const atomCreateSchema = z.object({
+  name: z.string().min(1, "name required"),
+  type: z.enum(["fact", "method", "theorem", "verification"]),
+})
+
 const atomRelationDeleteSchema = z.object({
   source_atom_id: z.string().min(1, "source atom required"),
   target_atom_id: z.string().min(1, "target atom required"),
@@ -304,6 +309,82 @@ export const ResearchRoutes = new Hono()
       }
 
       return c.json({ atoms, relations })
+    },
+  )
+  .post(
+    "/project/:researchProjectId/atom",
+    describeRoute({
+      summary: "Create atom",
+      description: "Create a lightweight atom with starter claim and evidence files.",
+      operationId: "research.atom.create",
+      responses: {
+        200: {
+          description: "Created atom",
+          content: {
+            "application/json": {
+              schema: resolver(atomSchema),
+            },
+          },
+        },
+        ...errors(400, 404),
+      },
+    }),
+    validator("json", atomCreateSchema),
+    async (c) => {
+      const researchProjectId = c.req.param("researchProjectId")
+      const body = c.req.valid("json")
+
+      const project = Database.use((db) =>
+        db
+          .select()
+          .from(ResearchProjectTable)
+          .where(eq(ResearchProjectTable.research_project_id, researchProjectId))
+          .get(),
+      )
+      if (!project) {
+        return c.json({ success: false, message: `research project not found: ${researchProjectId}` }, 404)
+      }
+
+      const atomId = uniqueID()
+      const atomDir = path.join(Instance.directory, "atom_list", atomId)
+      const claimPath = path.join(atomDir, "claim.md")
+      const evidencePath = path.join(atomDir, "evidence.md")
+      const evidenceAssessmentPath = path.join(atomDir, "evidence_assessment.md")
+
+      await Filesystem.write(claimPath, "# Claim\n")
+      await Filesystem.write(evidencePath, "# Evidence\n")
+      await Filesystem.write(evidenceAssessmentPath, "")
+
+      const now = Date.now()
+      Database.use((db) =>
+        db
+          .insert(AtomTable)
+          .values({
+            atom_id: atomId,
+            research_project_id: researchProjectId,
+            atom_name: body.name.trim(),
+            atom_type: body.type,
+            atom_claim_path: claimPath,
+            atom_evidence_type: "math",
+            atom_evidence_status: "pending",
+            atom_evidence_path: evidencePath,
+            atom_evidence_assessment_path: evidenceAssessmentPath,
+            article_id: null,
+            session_id: null,
+            time_created: now,
+            time_updated: now,
+          })
+          .run(),
+      )
+
+      await Bus.publish(Research.Event.AtomsUpdated, { researchProjectId })
+
+      const atom = Database.use((db) => db.select().from(AtomTable).where(eq(AtomTable.atom_id, atomId)).get())
+      if (!atom) {
+        return c.json({ success: false, message: `atom not found after create: ${atomId}` }, 404)
+      }
+
+      return c.json(atom)
     },
   )
   .post(

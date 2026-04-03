@@ -36,6 +36,11 @@ export function AtomSessionTab(props: {
   const [creating, setCreating] = createSignal(false)
 
   const handleReturn = () => {
+    if (window.history.length > 1) {
+      window.history.back()
+      return
+    }
+
     const sessionId = returnSessionId()
     if (sessionId) {
       navigate(`/${base64Encode(sdk.directory)}/session/${sessionId}`)
@@ -216,7 +221,7 @@ export function AtomSessionTab(props: {
   const tabTitle = () => {
     switch (props.activeTab) {
       case "content":
-        return "Content"
+        return "Claim"
       case "evidence":
         return "Evidence"
       case "assessment":

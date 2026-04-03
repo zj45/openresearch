@@ -6,6 +6,7 @@ import { type GraphState, GraphStateManager } from "./graph-state-manager"
 
 type Atom = ResearchAtomsListResponse["atoms"][number]
 type Relation = ResearchAtomsListResponse["relations"][number]
+type AtomKind = "fact" | "method" | "theorem" | "verification"
 type RelationType = keyof typeof RELATION_LABELS
 
 const TYPE_COLORS: Record<string, string> = {
@@ -75,6 +76,7 @@ export function AtomGraphView(props: {
   loading: boolean
   error: boolean
   onAtomClick: (atomId: string) => void
+  onAtomCreate: (input: { name: string; type: AtomKind }) => Promise<Atom>
   onAtomDelete: (atomId: string) => Promise<void>
   onRelationCreate: (input: { sourceAtomId: string; targetAtomId: string; relationType: string }) => Promise<void>
   onRelationUpdate: (input: {
@@ -96,7 +98,7 @@ export function AtomGraphView(props: {
   let anchorPinned = false
   let hideAnchorTimer: ReturnType<typeof setTimeout> | undefined
   let dimDebounceTimer: ReturnType<typeof setTimeout> | undefined
-  let pendingDimNodeId = ""   // "" = schedule clear, non-empty = schedule apply
+  let pendingDimNodeId = "" // "" = schedule clear, non-empty = schedule apply
   let buildTooltipFn: ((nodeId: string, mouseEvent?: MouseEvent) => void) | undefined
 
   const [containerReady, setContainerReady] = createSignal(false)
@@ -127,9 +129,21 @@ export function AtomGraphView(props: {
     relationTargetId: "",
     relationPrevType: "" as "" | RelationType,
     relationDeleting: false,
-    focusedNodeId: "",   // pinned node: dim effect locked, info card stays visible
+    focusedNodeId: "", // pinned node: dim effect locked, info card stays visible
     layoutType: "force" as "force" | "radial" | "circular" | "dagre",
     layoutMenuOpen: false,
+    createOpen: false,
+    createX: 0,
+    createY: 0,
+    createNodeX: 0,
+    createNodeY: 0,
+    createName: "",
+    createType: "fact" as AtomKind,
+    createSaving: false,
+    createError: "",
+    pendingAtomId: "",
+    pendingAtomX: 0,
+    pendingAtomY: 0,
   })
 
   const setContainerRef = (el: HTMLDivElement) => {
@@ -248,7 +262,7 @@ export function AtomGraphView(props: {
     clearTimeout(dimDebounceTimer)
     pendingDimNodeId = nodeId
     dimDebounceTimer = setTimeout(() => {
-      if (state.focusedNodeId) return  // focused node manages its own dim
+      if (state.focusedNodeId) return // focused node manages its own dim
       if (pendingDimNodeId) {
         applyDimEffect(pendingDimNodeId)
       } else {
@@ -261,6 +275,144 @@ export function AtomGraphView(props: {
     clearHideAnchor()
     if (anchorPinned || state.dragging || state.active || state.selectedRelationId || state.confirmOpen) return
     setState({ anchorVisible: false, hoverNodeId: "" })
+  }
+
+  const closeCreateForm = () => {
+    setState({
+      createOpen: false,
+      createName: "",
+      createType: "fact",
+      createSaving: false,
+      createError: "",
+    })
+  }
+
+  const resetNodeVisualState = () => {
+    clearHideAnchor()
+    clearTimeout(dimDebounceTimer)
+    pendingDimNodeId = ""
+    anchorPinned = false
+    clearHover()
+    clearNodeHover()
+    clearRelationHover()
+    hideTooltip()
+    clearDimEffect()
+    setState({
+      anchorVisible: false,
+      hoverNodeId: "",
+      focusedNodeId: "",
+      selectedIds: [],
+    })
+  }
+
+  const cancelAtomDelete = () => {
+    resetNodeVisualState()
+    setState({
+      confirmOpen: false,
+      deleting: false,
+      deleteIds: [],
+    })
+  }
+
+  const openCreateForm = (evt: MouseEvent | PointerEvent) => {
+    if (!containerRef || !graph) return
+    const rect = containerRef.getBoundingClientRect()
+    const x = evt.clientX - rect.left
+    const y = evt.clientY - rect.top
+    const pad = 16
+    const w = 260
+    const h = 230
+    const point = (graph as any).getCanvasByViewport?.([x, y]) ?? [x, y]
+
+    hideAnchor()
+    closeMenu()
+    clearHover()
+    clearNodeHover()
+    clearRelationHover()
+    setState({
+      selectedIds: [],
+      focusedNodeId: "",
+      layoutMenuOpen: false,
+      selectedRelationId: "",
+      active: false,
+      createOpen: true,
+      createX: Math.min(Math.max(x, pad), Math.max(pad, rect.width - w - pad)),
+      createY: Math.min(Math.max(y, pad), Math.max(pad, rect.height - h - pad)),
+      createNodeX: point[0],
+      createNodeY: point[1],
+      createName: "",
+      createType: "fact",
+      createSaving: false,
+      createError: "",
+    })
+  }
+
+  const submitCreateAtom = async () => {
+    if (state.createSaving) return
+    const name = state.createName.trim()
+    if (!name) {
+      setState("createError", "Name is required")
+      return
+    }
+
+    setState({ createSaving: true, createError: "" })
+    try {
+      const atom = await props.onAtomCreate({
+        name,
+        type: state.createType,
+      })
+      setState({
+        createOpen: false,
+        createName: "",
+        createSaving: false,
+        createError: "",
+        pendingAtomId: atom.atom_id,
+        pendingAtomX: state.createNodeX,
+        pendingAtomY: state.createNodeY,
+      })
+    } catch (error) {
+      setState({
+        createSaving: false,
+        createError: error instanceof Error ? error.message : "Failed to create atom",
+      })
+    }
+  }
+
+  const placePendingAtom = async () => {
+    if (!graph || !state.pendingAtomId) return
+
+    for (let i = 0; i < 12; i++) {
+      const ok = graph.getNodeData().some((node: any) => String(node.id) === state.pendingAtomId)
+      if (!ok) {
+        await frame()
+        continue
+      }
+
+      try {
+        graph.updateNodeData([
+          {
+            id: state.pendingAtomId,
+            style: {
+              x: state.pendingAtomX,
+              y: state.pendingAtomY,
+            },
+          },
+        ])
+        await graph.draw()
+        applyDimEffect(state.pendingAtomId)
+        setState({ selectedIds: [state.pendingAtomId], focusedNodeId: state.pendingAtomId })
+        showAnchor(state.pendingAtomId)
+        saveCurrentState()
+      } catch {
+      } finally {
+        setState({
+          pendingAtomId: "",
+          pendingAtomX: 0,
+          pendingAtomY: 0,
+        })
+      }
+      return
+    }
   }
 
   const showAnchor = (id: string) => {
@@ -358,8 +510,23 @@ export function AtomGraphView(props: {
 
   const closeMenu = () => {
     if (state.saving || state.relationDeleting) return
+
+    clearHideAnchor()
+    clearTimeout(dimDebounceTimer)
+    pendingDimNodeId = ""
+    anchorPinned = false
+    clearHover()
+    clearNodeHover()
+    clearRelationHover()
+    hideTooltip()
+    clearDimEffect()
+    if (state.sourceId) {
+      syncState(state.sourceId, [])
+    }
+
     setState({
       active: false,
+      dragging: false,
       sourceId: "",
       targetId: "",
       selectedRelationId: "",
@@ -370,6 +537,14 @@ export function AtomGraphView(props: {
       error: "",
       relationX: 0,
       relationY: 0,
+      startX: 0,
+      startY: 0,
+      endX: 0,
+      endY: 0,
+      anchorVisible: false,
+      hoverNodeId: "",
+      focusedNodeId: "",
+      selectedIds: [],
     })
   }
 
@@ -435,7 +610,13 @@ export function AtomGraphView(props: {
         },
       },
       animation: {
-        update: [{ fields: ["size", "fillOpacity", "strokeOpacity", "lineWidth", "shadowBlur"], duration: 600, easing: "ease-in-out" }],
+        update: [
+          {
+            fields: ["size", "fillOpacity", "strokeOpacity", "lineWidth", "shadowBlur"],
+            duration: 600,
+            easing: "ease-in-out",
+          },
+        ],
       },
     },
     edge: {
@@ -593,7 +774,12 @@ export function AtomGraphView(props: {
       const statusColor = STATUS_COLORS[atom.atom_evidence_status] ?? "#64748b"
       const statusBg = STATUS_DOT_BG[atom.atom_evidence_status] ?? "rgba(100,116,139,0.15)"
       const statusLabel = EVIDENCE_STATUS_LABELS[atom.atom_evidence_status] ?? atom.atom_evidence_status
-      const evTypeLabel = atom.atom_evidence_type === "math" ? "Math" : atom.atom_evidence_type === "experiment" ? "Experiment" : atom.atom_evidence_type
+      const evTypeLabel =
+        atom.atom_evidence_type === "math"
+          ? "Math"
+          : atom.atom_evidence_type === "experiment"
+            ? "Experiment"
+            : atom.atom_evidence_type
 
       // Remove any existing tooltip first
       const existing = document.getElementById("atom-tooltip")
@@ -654,7 +840,9 @@ export function AtomGraphView(props: {
               </span>
             </div>
           </div>
-          ${evTypeLabel ? `
+          ${
+            evTypeLabel
+              ? `
           <div style="
             padding: 7px 14px;
             border-top: 1px solid rgba(255,255,255,0.06);
@@ -665,7 +853,9 @@ export function AtomGraphView(props: {
           ">
             <span style="color:#475569;">Evidence</span>
             <span style="color:#94a3b8;font-weight:500;">${evTypeLabel}</span>
-          </div>` : ""}
+          </div>`
+              : ""
+          }
         </div>
       `
 
@@ -721,7 +911,7 @@ export function AtomGraphView(props: {
       syncSize()
 
       graph.on("node:click", (evt: any) => {
-        if (state.dragging || state.active || state.confirmOpen) return
+        if (state.dragging || state.active || state.confirmOpen || state.createOpen) return
         closeMenu()
         const nodeId = evt.target?.id
         if (!nodeId) return
@@ -737,7 +927,9 @@ export function AtomGraphView(props: {
             hideAnchor()
             const tooltip = document.getElementById("atom-tooltip")
             if (tooltip) {
-              if ((tooltip as any).cleanup) { ;(tooltip as any).cleanup() }
+              if ((tooltip as any).cleanup) {
+                ;(tooltip as any).cleanup()
+              }
               tooltip.remove()
             }
           } else {
@@ -757,13 +949,13 @@ export function AtomGraphView(props: {
       })
 
       graph.on("node:dblclick", (evt: any) => {
-        if (state.dragging || state.active || state.confirmOpen) return
+        if (state.dragging || state.active || state.confirmOpen || state.createOpen) return
         const nodeId = evt.target?.id
         if (nodeId) props.onAtomClick(nodeId)
       })
 
       graph.on("edge:click", (evt: any) => {
-        if (state.dragging || state.active || state.confirmOpen || !containerRef) return
+        if (state.dragging || state.active || state.confirmOpen || state.createOpen || !containerRef) return
         const edgeId = evt.target?.id
         if (!edgeId) return
         const rel = props.relations.find((item) => relationId(item) === edgeId)
@@ -837,10 +1029,13 @@ export function AtomGraphView(props: {
       graph.on("canvas:click", () => {
         hideAnchor()
         clearTimeout(dimDebounceTimer)
+        closeCreateForm()
         if (state.focusedNodeId) {
           const tooltip = document.getElementById("atom-tooltip")
           if (tooltip) {
-            if ((tooltip as any).cleanup) { ;(tooltip as any).cleanup() }
+            if ((tooltip as any).cleanup) {
+              ;(tooltip as any).cleanup()
+            }
             tooltip.remove()
           }
         }
@@ -849,6 +1044,25 @@ export function AtomGraphView(props: {
         clearRelationHover()
         clearDimEffect()
         closeMenu()
+      })
+
+      graph.on("canvas:contextmenu", (evt: any) => {
+        const e = evt.originalEvent as MouseEvent | PointerEvent | undefined
+        if (!e || state.dragging || state.active || state.confirmOpen) return
+        e.preventDefault()
+        openCreateForm(e)
+      })
+
+      graph.on("node:contextmenu", (evt: any) => {
+        const e = evt.originalEvent as MouseEvent | PointerEvent | undefined
+        e?.preventDefault()
+        closeCreateForm()
+      })
+
+      graph.on("edge:contextmenu", (evt: any) => {
+        const e = evt.originalEvent as MouseEvent | PointerEvent | undefined
+        e?.preventDefault()
+        closeCreateForm()
       })
 
       graph.on("node:dragend", () => {
@@ -959,11 +1173,11 @@ export function AtomGraphView(props: {
       nodeSpacing: 16,
       unitRadius: 220,
       strictRadial: false,
-      sortBy: "degree",     // high-degree nodes near center
+      sortBy: "degree", // high-degree nodes near center
     },
     circular: {
       type: "circular",
-      radius: 300,          // explicit radius so nodes don't crowd
+      radius: 300, // explicit radius so nodes don't crowd
       clockwise: true,
       divisions: 1,
       ordering: "degree",
@@ -1025,26 +1239,94 @@ export function AtomGraphView(props: {
   })
 
   createEffect(() => {
+    const id = state.pendingAtomId
+    props.atoms.length
+    if (!id) return
+    void placePendingAtom()
+  })
+
+  createEffect(() => {
+    const ids = new Set(props.atoms.map((atom) => atom.atom_id))
+    const selectedIds = state.selectedIds.filter((id) => ids.has(id))
+    const deleteIds = state.deleteIds.filter((id) => ids.has(id))
+    const focusedGone = !!state.focusedNodeId && !ids.has(state.focusedNodeId)
+    const hoverGone = !!state.hoverNodeId && !ids.has(state.hoverNodeId)
+    const sourceGone = !!state.sourceId && !ids.has(state.sourceId)
+    const targetGone = !!state.targetId && !ids.has(state.targetId)
+
+    if (
+      !focusedGone &&
+      !hoverGone &&
+      !sourceGone &&
+      !targetGone &&
+      selectedIds.length === state.selectedIds.length &&
+      deleteIds.length === state.deleteIds.length
+    ) {
+      return
+    }
+
+    if (hoverGone) {
+      hoverNodeId = ""
+      anchorPinned = false
+      pendingDimNodeId = ""
+      clearTimeout(dimDebounceTimer)
+    }
+
+    if (focusedGone) {
+      hideTooltip()
+      clearDimEffect()
+      pendingDimNodeId = ""
+      clearTimeout(dimDebounceTimer)
+    }
+
+    if (sourceGone || targetGone) {
+      clearHover()
+      setState({
+        active: false,
+        dragging: false,
+        sourceId: "",
+        targetId: "",
+        relationType: "",
+        saving: false,
+        error: "",
+        startX: 0,
+        startY: 0,
+        endX: 0,
+        endY: 0,
+      })
+    }
+
+    setState({
+      hoverNodeId: hoverGone ? "" : state.hoverNodeId,
+      anchorVisible: hoverGone ? false : state.anchorVisible,
+      focusedNodeId: focusedGone ? "" : state.focusedNodeId,
+      selectedIds,
+      deleteIds,
+    })
+  })
+
+  createEffect(() => {
     const deleting = state.deleting
     const confirmOpen = state.confirmOpen
 
     const onKey = (evt: KeyboardEvent) => {
-      if (
-        !containerRef ||
-        state.selectedIds.length === 0 ||
-        state.active ||
-        state.dragging ||
-        deleting ||
-        confirmOpen
-      ) {
+      if (evt.key === "Escape" && state.createOpen) {
+        evt.preventDefault()
+        closeCreateForm()
         return
       }
+
+      if (!containerRef || state.selectedIds.length === 0 || state.active || state.dragging || deleting || confirmOpen)
+        return
+
       const target = evt.target as HTMLElement | null
       const tag = target?.tagName
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target?.isContentEditable) return
       if (evt.key !== "Delete" && evt.key !== "Backspace") return
       evt.preventDefault()
-      setState("deleteIds", [...state.selectedIds])
+      const ids = [...state.selectedIds]
+      resetNodeVisualState()
+      setState("deleteIds", ids)
       setState("confirmOpen", true)
       setState("anchorVisible", false)
     }
@@ -1098,16 +1380,18 @@ export function AtomGraphView(props: {
 
     const cardW = 220
     const cardH = state.selectedRelationId
-      ? (state.error ? 290 : 268)   // edit card: header + 7 types + error? + delete row
-      : (state.error ? 260 : 240)   // create card: header + 7 types + error?
+      ? state.error
+        ? 290
+        : 268 // edit card: header + 7 types + error? + delete row
+      : state.error
+        ? 260
+        : 240 // create card: header + 7 types + error?
     const gap = 8
     const pad = 8
 
     const left = Math.min(Math.max(state.relationX, cardW / 2 + pad), containerRef.clientWidth - cardW / 2 - pad)
     const spaceBelow = containerRef.clientHeight - state.relationY - gap - pad
-    const top = spaceBelow >= cardH
-      ? state.relationY + gap
-      : Math.max(state.relationY - cardH - gap, pad)
+    const top = spaceBelow >= cardH ? state.relationY + gap : Math.max(state.relationY - cardH - gap, pad)
 
     return { left, top }
   }
@@ -1219,6 +1503,7 @@ export function AtomGraphView(props: {
   const removeAtom = async () => {
     if (state.deleteIds.length === 0 || state.deleting) return
 
+    resetNodeVisualState()
     setState("deleting", true)
     try {
       for (const id of state.deleteIds) {
@@ -1232,12 +1517,6 @@ export function AtomGraphView(props: {
         anchorVisible: false,
         focusedNodeId: "",
       })
-      // Remove pinned tooltip if any
-      const tooltip = document.getElementById("atom-tooltip")
-      if (tooltip) {
-        if ((tooltip as any).cleanup) { ;(tooltip as any).cleanup() }
-        tooltip.remove()
-      }
     } catch {
       setState("deleting", false)
     }
@@ -1295,7 +1574,16 @@ export function AtomGraphView(props: {
                 beginDraft(state.hoverNodeId)
               }}
             >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 16 16"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.8"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
                 <path d="M10.5 5.5 C10.5 3.57 9.93 2 8 2 C6.07 2 5.5 3.57 5.5 5.5 L5.5 10.5 C5.5 12.43 6.07 14 8 14 C9.93 14 10.5 12.43 10.5 10.5" />
                 <circle cx="5.5" cy="5.5" r="1.8" fill="currentColor" stroke="none" />
                 <circle cx="10.5" cy="10.5" r="1.8" fill="currentColor" stroke="none" />
@@ -1312,18 +1600,121 @@ export function AtomGraphView(props: {
                   evt.preventDefault()
                   evt.stopPropagation()
                   if (!state.hoverNodeId) return
-                  hideTooltip()
+                  resetNodeVisualState()
                   setState("selectedIds", [state.hoverNodeId])
                   setState("deleteIds", [state.hoverNodeId])
                   setState("confirmOpen", true)
-                  setState("anchorVisible", false)
                 }}
               >
-                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.8"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
                   <path d="M2 4h12M5 4V2.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 .5.5V4M6 7v5M10 7v5M3 4l.8 9.1A1 1 0 0 0 4.8 14h6.4a1 1 0 0 0 1-.9L13 4" />
                 </svg>
               </button>
             </Show>
+          </div>
+        </div>
+      </Show>
+      <Show when={state.createOpen}>
+        <div
+          class="absolute z-30 w-[260px] overflow-hidden rounded-2xl border border-white/10 bg-[rgba(15,23,42,0.96)] shadow-[0_24px_64px_rgba(0,0,0,0.55)]"
+          style={{
+            left: `${state.createX}px`,
+            top: `${state.createY}px`,
+            animation: "node-info-in 0.14s ease-out",
+            "backdrop-filter": "blur(12px)",
+          }}
+          onClick={(evt) => evt.stopPropagation()}
+        >
+          <div class="border-b border-white/8 px-4 py-3">
+            <div class="text-[10px] font-medium tracking-wider text-[#475569]">NEW ATOM</div>
+            <div class="mt-1 text-[13px] font-medium text-[#e2e8f0]">Create atom at this location</div>
+          </div>
+          <div class="flex flex-col gap-3 px-4 py-4">
+            <div class="flex flex-col gap-1.5">
+              <label class="text-[11px] font-medium text-[#94a3b8]">Name</label>
+              <input
+                value={state.createName}
+                onInput={(evt) => setState({ createName: evt.currentTarget.value, createError: "" })}
+                onKeyDown={(evt) => {
+                  if (evt.key === "Enter") {
+                    evt.preventDefault()
+                    void submitCreateAtom()
+                  }
+                }}
+                placeholder="e.g. Gradient stability bound"
+                class="h-9 rounded-lg border border-white/10 bg-white/5 px-3 text-[13px] text-[#e2e8f0] outline-none transition-colors placeholder:text-[#475569] focus:border-cyan-400/60"
+                autofocus
+              />
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <label class="text-[11px] font-medium text-[#94a3b8]">Type</label>
+              <div class="overflow-hidden rounded-lg border border-white/8 bg-white/[0.02] py-1">
+                {Object.entries(TYPE_LABELS).map(([value, label]) => {
+                  const color = TYPE_COLORS[value] ?? "#64748b"
+                  const isSelected = state.createType === value
+                  return (
+                    <button
+                      class="w-full flex items-center gap-2.5 px-3 h-8 transition-colors text-left"
+                      style={{
+                        background: isSelected ? `${color}18` : undefined,
+                        opacity: state.createSaving && !isSelected ? 0.4 : 1,
+                      }}
+                      disabled={state.createSaving}
+                      onClick={() => setState("createType", value as AtomKind)}
+                    >
+                      <span
+                        class="shrink-0 h-2 w-2 rounded-full"
+                        style={{ background: color, "box-shadow": isSelected ? `0 0 6px ${color}80` : undefined }}
+                      />
+                      <span class="text-xs flex-1" style={{ color: isSelected ? color : "#cbd5e1" }}>
+                        {label}
+                      </span>
+                      <Show when={isSelected}>
+                        <svg class="w-3 h-3 shrink-0" style={{ color }} viewBox="0 0 16 16" fill="none">
+                          <path
+                            d="M3 8l3.5 3.5L13 4.5"
+                            stroke="currentColor"
+                            stroke-width="1.8"
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                          />
+                        </svg>
+                      </Show>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+            <Show when={state.createError}>
+              <div class="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-[11px] text-red-300">
+                {state.createError}
+              </div>
+            </Show>
+            <div class="flex items-center justify-between gap-2 border-t border-white/8 pt-3">
+              <button
+                onClick={() => closeCreateForm()}
+                disabled={state.createSaving}
+                class="h-8 flex-1 rounded-lg bg-white/5 text-[12px] font-medium text-[#94a3b8] transition-colors hover:bg-white/10 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => void submitCreateAtom()}
+                disabled={state.createSaving}
+                class="h-8 flex-1 rounded-lg bg-cyan-500 text-[12px] font-medium text-slate-950 transition-colors hover:bg-cyan-400 disabled:opacity-50"
+              >
+                {state.createSaving ? "Creating..." : "Create"}
+              </button>
+            </div>
           </div>
         </div>
       </Show>
@@ -1344,10 +1735,7 @@ export function AtomGraphView(props: {
         <Show when={!legendExpanded()}>
           <div class="p-2 grid grid-cols-2 gap-1.5">
             {legendItems.map((item) => (
-              <div
-                class="flex items-center gap-1 px-1.5 py-1 rounded"
-                style={{ background: `${item.color}22` }}
-              >
+              <div class="flex items-center gap-1 px-1.5 py-1 rounded" style={{ background: `${item.color}22` }}>
                 <div class="w-2 h-2 rounded-full flex-shrink-0" style={{ background: item.color }} />
                 <span class="text-[10px] font-medium" style={{ color: item.color }}>
                   {item.label.slice(0, 3)}
@@ -1360,22 +1748,30 @@ export function AtomGraphView(props: {
         {/* Expanded: full legend */}
         <Show when={legendExpanded()}>
           <div class="px-3 py-2.5 w-44" style={{ animation: "legend-expand 0.15s ease-out" }}>
-            <div class="text-[10px] mb-2 font-medium tracking-wider" style={{ color: "#64748b" }}>ATOM TYPES</div>
+            <div class="text-[10px] mb-2 font-medium tracking-wider" style={{ color: "#64748b" }}>
+              ATOM TYPES
+            </div>
             <div class="flex flex-col gap-1.5 mb-3">
               {legendItems.map((item) => (
                 <div class="flex items-center gap-2">
                   <div class="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: item.color }} />
-                  <span class="text-xs" style={{ color: "#cbd5e1" }}>{item.label}</span>
+                  <span class="text-xs" style={{ color: "#cbd5e1" }}>
+                    {item.label}
+                  </span>
                 </div>
               ))}
             </div>
             <div class="border-t border-white/8 pt-2">
-              <div class="text-[10px] mb-2 font-medium tracking-wider" style={{ color: "#64748b" }}>RELATIONS</div>
+              <div class="text-[10px] mb-2 font-medium tracking-wider" style={{ color: "#64748b" }}>
+                RELATIONS
+              </div>
               <div class="flex flex-col gap-1.5">
                 {relationLegendItems.map((item) => (
                   <div class="flex items-center gap-2">
                     <div class="w-3 h-0.5 rounded-full flex-shrink-0" style={{ background: item.color }} />
-                    <span class="text-xs" style={{ color: "#cbd5e1" }}>{item.label}</span>
+                    <span class="text-xs" style={{ color: "#cbd5e1" }}>
+                      {item.label}
+                    </span>
                   </div>
                 ))}
               </div>
@@ -1389,10 +1785,21 @@ export function AtomGraphView(props: {
               >
                 <span class="flex items-center gap-1">
                   <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                    />
                   </svg>
-                  {({ force: "Force", radial: "Radial", circular: "Circular", dagre: "Tree" } as Record<string,string>)[state.layoutType]}
+                  {
+                    (
+                      { force: "Force", radial: "Radial", circular: "Circular", dagre: "Tree" } as Record<
+                        string,
+                        string
+                      >
+                    )[state.layoutType]
+                  }
                 </span>
                 <svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
@@ -1405,10 +1812,10 @@ export function AtomGraphView(props: {
                 >
                   {(
                     [
-                      { key: "force",    label: "Force",    desc: "Physics simulation" },
-                      { key: "radial",   label: "Radial",   desc: "Important nodes centered" },
+                      { key: "force", label: "Force", desc: "Physics simulation" },
+                      { key: "radial", label: "Radial", desc: "Important nodes centered" },
                       { key: "circular", label: "Circular", desc: "Ring arrangement" },
-                      { key: "dagre",    label: "Tree",     desc: "Hierarchical top-down" },
+                      { key: "dagre", label: "Tree", desc: "Hierarchical top-down" },
                     ] as const
                   ).map((item) => (
                     <button
@@ -1419,10 +1826,15 @@ export function AtomGraphView(props: {
                         void triggerAutoLayout(item.key)
                       }}
                     >
-                      <span class="text-xs font-medium leading-none" style={{ color: state.layoutType === item.key ? "#818cf8" : "#cbd5e1" }}>
+                      <span
+                        class="text-xs font-medium leading-none"
+                        style={{ color: state.layoutType === item.key ? "#818cf8" : "#cbd5e1" }}
+                      >
                         {item.label}
                       </span>
-                      <span class="text-[10px] leading-none shrink-0" style={{ color: "#475569" }}>{item.desc}</span>
+                      <span class="text-[10px] leading-none shrink-0" style={{ color: "#475569" }}>
+                        {item.desc}
+                      </span>
                     </button>
                   ))}
                 </div>
@@ -1460,7 +1872,9 @@ export function AtomGraphView(props: {
                   ? (props.atoms.find((a) => a.atom_id === state.sourceId)?.atom_name ?? "…")
                   : (relationSource()?.atom_name ?? state.relationSourceId.slice(0, 8))}
               </span>
-              <span style={{ color: "#475569" }} class="shrink-0">→</span>
+              <span style={{ color: "#475569" }} class="shrink-0">
+                →
+              </span>
               <span class="truncate max-w-[70px]">
                 {state.active
                   ? (props.atoms.find((a) => a.atom_id === state.targetId)?.atom_name ?? "…")
@@ -1497,15 +1911,36 @@ export function AtomGraphView(props: {
                     class="shrink-0 h-2 w-2 rounded-full"
                     style={{ background: color, "box-shadow": isSelected ? `0 0 6px ${color}80` : undefined }}
                   />
-                  <span class="text-xs flex-1" style={{ color: isSelected ? color : "#cbd5e1" }}>{label}</span>
+                  <span class="text-xs flex-1" style={{ color: isSelected ? color : "#cbd5e1" }}>
+                    {label}
+                  </span>
                   <Show when={isSaving}>
-                    <svg class="w-3 h-3 animate-spin shrink-0" style={{ color: "#64748b" }} viewBox="0 0 24 24" fill="none">
-                      <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" stroke-dasharray="31.4" stroke-linecap="round" />
+                    <svg
+                      class="w-3 h-3 animate-spin shrink-0"
+                      style={{ color: "#64748b" }}
+                      viewBox="0 0 24 24"
+                      fill="none"
+                    >
+                      <circle
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        stroke-width="3"
+                        stroke-dasharray="31.4"
+                        stroke-linecap="round"
+                      />
                     </svg>
                   </Show>
                   <Show when={isSelected && !isSaving}>
                     <svg class="w-3 h-3 shrink-0" style={{ color }} viewBox="0 0 16 16" fill="none">
-                      <path d="M3 8l3.5 3.5L13 4.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+                      <path
+                        d="M3 8l3.5 3.5L13 4.5"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
                     </svg>
                   </Show>
                 </button>
@@ -1571,34 +2006,44 @@ export function AtomGraphView(props: {
             {/* Icon + title */}
             <div class="flex flex-col items-center px-6 pt-6 pb-4 text-center">
               <div class="mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-500/12 ring-1 ring-red-500/25">
-                <svg width="22" height="22" viewBox="0 0 16 16" fill="none" stroke="#f87171" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <svg
+                  width="22"
+                  height="22"
+                  viewBox="0 0 16 16"
+                  fill="none"
+                  stroke="#f87171"
+                  stroke-width="1.6"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
                   <path d="M2 4h12M5 4V2.5a.5.5 0 0 1 .5-.5h5a.5.5 0 0 1 .5.5V4M6 7v5M10 7v5M3 4l.8 9.1A1 1 0 0 0 4.8 14h6.4a1 1 0 0 0 1-.9L13 4" />
                 </svg>
               </div>
-              <div class="text-[15px] font-semibold text-[#f1f5f9]">删除原子</div>
+              <div class="text-[15px] font-semibold text-[#f1f5f9]">Delete atom</div>
               <div class="mt-2 text-[13px] leading-relaxed text-[#94a3b8]">
-                确认删除{" "}
+                Delete{" "}
                 <span class="font-medium text-[#e2e8f0]">
                   {(() => {
                     const atoms = deleteAtoms()
                     return atoms.length === 1
                       ? (atoms[0]?.atom_name ?? state.deleteIds[0]?.slice(0, 8))
-                      : `${state.deleteIds.length} 个原子`
+                      : `${state.deleteIds.length} atoms`
                   })()}
                 </span>
-                ？<br />相关联的关系、文件和会话将一并删除。
+                ?<br />
+                Related relations, files, and sessions will also be deleted.
               </div>
-              <div class="mt-2 text-[11px] text-[#475569]">此操作不可撤销</div>
+              <div class="mt-2 text-[11px] text-[#475569]">This action cannot be undone</div>
             </div>
             {/* Actions */}
             <div class="flex gap-2 border-t border-white/6 px-4 py-3">
               <button
-                onClick={() => setState({ confirmOpen: false, deleting: false, deleteIds: [] })}
+                onClick={() => cancelAtomDelete()}
                 disabled={state.deleting}
                 class="flex-1 rounded-lg border border-white/8 bg-white/5 py-2 text-[13px] font-medium transition-all hover:bg-white/10 disabled:opacity-50"
                 style={{ color: "#94a3b8" }}
               >
-                取消
+                Cancel
               </button>
               <button
                 onClick={() => removeAtom()}
@@ -1606,7 +2051,7 @@ export function AtomGraphView(props: {
                 class="flex-1 rounded-lg bg-red-500 py-2 text-[13px] font-medium transition-all hover:bg-red-400 disabled:opacity-50 shadow-[0_2px_8px_rgba(239,68,68,0.35)]"
                 style={{ color: "#ffffff" }}
               >
-                {state.deleting ? "删除中…" : "确认删除"}
+                {state.deleting ? "Deleting..." : "Delete"}
               </button>
             </div>
           </div>
@@ -1618,8 +2063,11 @@ export function AtomGraphView(props: {
         </div>
       </Show>
       <Show when={!props.loading && !props.error && props.atoms.length === 0}>
-        <div class="pointer-events-none absolute inset-0 flex items-center justify-center bg-[rgba(2,6,23,0.8)] z-10">
-          <div class="text-slate-400">No atoms to display</div>
+        <div class="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-[rgba(2,6,23,0.8)]">
+          <div class="text-center text-slate-400">
+            <div>No atoms to display</div>
+            <div class="mt-2 text-[12px] text-slate-500">Right-click anywhere to create the first atom.</div>
+          </div>
         </div>
       </Show>
     </div>

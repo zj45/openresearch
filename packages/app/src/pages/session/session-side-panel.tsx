@@ -130,6 +130,31 @@ export function SessionSidePanel(props: {
     }
   })
 
+  const atomGraphSessionId = createMemo(() => {
+    const rpId = atomSession()?.research_project_id ?? experimentSession()?.research_project_id
+    if (!rpId) return
+    return sessionStorage.getItem(`research-project-main-session-${rpId}`) ?? undefined
+  })
+
+  const openAtomGraphSession = () => {
+    const sessionId = atomGraphSessionId()
+    if (!sessionId || !params.dir) return
+    localStorage.setItem("atoms-tab-view-mode", "graph")
+    const key = `${params.dir}/${sessionId}`
+    layout.tabs(key).setActive("atoms")
+    layout.view(key).reviewPanel.open()
+    navigate(`/${base64Encode(sdk.directory)}/session/${sessionId}`)
+  }
+
+  const returnFromExperimentSession = () => {
+    if (window.history.length > 1) {
+      window.history.back()
+      return
+    }
+
+    openAtomGraphSession()
+  }
+
   // Fetch experiment diff data at panel level; refetch when switching to the changes tab
   const [experimentDiff, { refetch: refetchExperimentDiff }] = createResource(
     () => experimentSession()?.exp_id,
@@ -224,6 +249,25 @@ export function SessionSidePanel(props: {
       settledSessionId = params.id
     }
   })
+
+  let normalizedSessionId: string | undefined
+  createEffect(() => {
+    if (params.id !== settledSessionId) return
+    if (normalizedSessionId === params.id) return
+
+    const active = tabs().active()
+    const next = isAtomSession() ? "atom-content" : isResearchProject() && !isExpSession() ? "atoms" : undefined
+    if (!next) {
+      normalizedSessionId = params.id
+      return
+    }
+
+    if (active === undefined || active === "review") {
+      tabs().setActive(next)
+    }
+    normalizedSessionId = params.id
+  })
+
   const openTab = (value: string) => {
     if (value === "review" && params.id !== settledSessionId) return
     _openTab(value)
@@ -415,26 +459,20 @@ export function SessionSidePanel(props: {
                             <div>Result</div>
                           </div>
                         </Tabs.Trigger>
-                        <Show when={experimentSession()?.atom?.session_id}>
-                          {(atomSessionId) => (
-                            <button
-                              class="ml-auto shrink-0 px-2 py-1 text-11-regular text-text-weak hover:text-text-base transition-colors"
-                              onClick={() => navigate(`/${base64Encode(sdk.directory)}/session/${atomSessionId()}`)}
-                            >
-                              ← Atom
-                            </button>
-                          )}
+                        <button
+                          class="ml-auto shrink-0 px-2 py-1 text-11-regular text-text-weak hover:text-text-base transition-colors"
+                          onClick={returnFromExperimentSession}
+                        >
+                          ← Return
+                        </button>
+                        <Show when={atomGraphSessionId()}>
+                          <button
+                            class="shrink-0 px-2 py-1 text-11-regular text-text-weak hover:text-text-base transition-colors"
+                            onClick={openAtomGraphSession}
+                          >
+                            ← Atom Graph
+                          </button>
                         </Show>
-                      </Show>
-                      <Show when={!isExpSession() && reviewTab()}>
-                        <Tabs.Trigger value="review">
-                          <div class="flex items-center gap-1.5">
-                            <div>{language.t("session.tab.review")}</div>
-                            <Show when={hasReview()}>
-                              <div>{reviewCount()}</div>
-                            </Show>
-                          </div>
-                        </Tabs.Trigger>
                       </Show>
                       <Show when={!isExpSession() && isResearchProject() && !isAtomSession()}>
                         <Tabs.Trigger value="atoms">
@@ -474,6 +512,26 @@ export function SessionSidePanel(props: {
                             <div>Assessment</div>
                           </div>
                         </Tabs.Trigger>
+                      </Show>
+                      <Show when={!isExpSession() && reviewTab()}>
+                        <Tabs.Trigger value="review">
+                          <div class="flex items-center gap-1.5">
+                            <div>{language.t("session.tab.review")}</div>
+                            <Show when={hasReview()}>
+                              <div>{reviewCount()}</div>
+                            </Show>
+                          </div>
+                        </Tabs.Trigger>
+                      </Show>
+                      <Show when={!isExpSession() && isAtomSession()}>
+                        <Show when={atomGraphSessionId()}>
+                          <button
+                            class="ml-auto shrink-0 px-2 py-1 text-11-regular text-text-weak hover:text-text-base transition-colors"
+                            onClick={openAtomGraphSession}
+                          >
+                            ← Atom Graph
+                          </button>
+                        </Show>
                       </Show>
                       <Show when={contextOpen()}>
                         <Tabs.Trigger
