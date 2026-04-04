@@ -933,10 +933,11 @@ export default function Layout(props: ParentProps) {
   }
 
   async function unarchiveSession(session: Session) {
+    // Use 0 to indicate unarchived (backend will set to null)
     await globalSDK.client.session.update({
       directory: session.directory,
       sessionID: session.id,
-      time: { archived: undefined },
+      time: { archived: 0 },
     })
     const [store, setStore] = globalSync.child(session.directory)
     setStore(
@@ -1892,27 +1893,47 @@ export default function Layout(props: ParentProps) {
         .list({ directory: props.directory, limit: 1000, archived: true })
         .then((x) => x.data ?? [])
         .catch(() => [])
-      setState({ loading: false, sessions })
+      // Filter out sessions with invalid archived time
+      const validSessions = sessions.filter(
+        (s) => s.time.archived && typeof s.time.archived === "number" && s.time.archived > 0,
+      )
+      setState({ loading: false, sessions: validSessions })
     })
 
     const handleUnarchive = async (session: Session) => {
-      await unarchiveSession(session)
-      setState(
-        produce((draft) => {
-          const index = draft.sessions.findIndex((s) => s.id === session.id)
-          if (index !== -1) draft.sessions.splice(index, 1)
-        }),
-      )
+      try {
+        await unarchiveSession(session)
+        setState(
+          produce((draft) => {
+            const index = draft.sessions.findIndex((s) => s.id === session.id)
+            if (index !== -1) draft.sessions.splice(index, 1)
+          }),
+        )
+      } catch (error) {
+        console.error("Failed to unarchive session:", error)
+        showToast({
+          title: language.t("common.error"),
+          description: "Failed to unarchive session",
+        })
+      }
     }
 
     const handleDelete = async (session: Session) => {
-      await globalSDK.client.session.delete({ sessionID: session.id })
-      setState(
-        produce((draft) => {
-          const index = draft.sessions.findIndex((s) => s.id === session.id)
-          if (index !== -1) draft.sessions.splice(index, 1)
-        }),
-      )
+      try {
+        await globalSDK.client.session.delete({ sessionID: session.id })
+        setState(
+          produce((draft) => {
+            const index = draft.sessions.findIndex((s) => s.id === session.id)
+            if (index !== -1) draft.sessions.splice(index, 1)
+          }),
+        )
+      } catch (error) {
+        console.error("Failed to delete session:", error)
+        showToast({
+          title: language.t("common.error"),
+          description: "Failed to delete session",
+        })
+      }
     }
 
     return (
@@ -2184,6 +2205,7 @@ export default function Layout(props: ParentProps) {
       dialog.show(() => <DialogResetWorkspace root={root} directory={directory} />),
     showDeleteWorkspaceDialog: (root, directory) =>
       dialog.show(() => <DialogDeleteWorkspace root={root} directory={directory} />),
+    showArchivedSessionsDialog: (directory) => dialog.show(() => <DialogArchivedSessions directory={directory} />),
     setScrollContainerRef: (el, mobile) => {
       if (!mobile) scrollContainerRef = el
     },
