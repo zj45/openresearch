@@ -38,3 +38,14 @@ sshpass -p '<password>' rsync -avz \
   --exclude '*.pyc' \
   -e 'ssh -p <port> -o StrictHostKeyChecking=no' \
   <code_path>/ <user>@<address>:<remote_path>/
+
+## Return Format
+
+When done, return a summary:
+
+```
+## Deploy Result
+
+**Status**: success | failed
+**Server**: <address>
+**Remote Path**: <remote_path>
