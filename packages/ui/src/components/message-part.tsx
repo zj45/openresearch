@@ -818,7 +818,8 @@ type HighlightSegment = { text: string; type?: "file" | "agent" }
 
 function HighlightedText(props: { text: string; references: FilePart[]; agents: AgentPart[] }) {
   const segments = createMemo(() => {
-    const text = props.text
+    const text = props.text ?? ""
+    if (!text) return [{ text: "" }] as HighlightSegment[]
 
     const allRefs: { start: number; end: number; type: "file" | "agent" }[] = [
       ...props.references
@@ -1574,8 +1575,9 @@ ToolRegistry.register({
       if (!nav || typeof window === "undefined") return
 
       e.preventDefault()
+      const handled = nav(sessionId)
+      if (handled) return
       const before = window.location.pathname + window.location.search + window.location.hash
-      nav(sessionId)
       setTimeout(() => {
         const after = window.location.pathname + window.location.search + window.location.hash
         if (after === before) window.location.assign(url)
