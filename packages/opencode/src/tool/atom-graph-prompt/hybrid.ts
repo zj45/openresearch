@@ -1,4 +1,4 @@
-import type { TraversedAtom, RelationType, AtomType } from "./types"
+import type { TraversedAtom, RelationType, AtomType, CommunityFilterOptions } from "./types"
 import { traverseAtomGraph } from "./traversal"
 import { loadEmbeddingCache, getAtomEmbedding, cosineSimilarity, saveEmbeddingCache } from "./embedding"
 import { scoreAndRankAtoms, selectDiverseAtoms, type ScoringWeights, DEFAULT_WEIGHTS } from "./scoring"
@@ -6,6 +6,7 @@ import { selectAtomsWithinBudget, adaptiveBudgetSelection, type TokenBudgetOptio
 import { Database, eq } from "../../storage/db"
 import { AtomTable } from "../../research/research.sql"
 import { Filesystem } from "../../util/filesystem"
+import { loadCommunityCache, getCommunityAtoms } from "./community"
 
 /**
  * 混合检索选项
@@ -23,6 +24,9 @@ export interface HybridSearchOptions {
   // 语义搜索参数
   semanticTopK?: number // 语义搜索返回的 top K atoms
   semanticThreshold?: number // 语义相似度阈值
+
+  // Phase 3: 社区过滤
+  communityFilter?: CommunityFilterOptions
 
   // 选择策略
   maxAtoms: number
@@ -69,6 +73,7 @@ export async function hybridSearch(options: HybridSearchOptions): Promise<Hybrid
     atomTypes,
     semanticTopK = 5,
     semanticThreshold = 0.5,
+    communityFilter,
     maxAtoms,
     diversityWeight = 0.3,
     scoringWeights = DEFAULT_WEIGHTS,
@@ -94,7 +99,13 @@ export async function hybridSearch(options: HybridSearchOptions): Promise<Hybrid
     fromSemanticSearch = semanticAtomIds.length
   }
 
-  // Step 2: 确定图遍历的起始点
+  // Step 2: 应用社区过滤（Phase 3）
+  let communityAtomIds: string[] = []
+  if (communityFilter) {
+    communityAtomIds = await applyCommunityFilter(communityFilter)
+  }
+
+  // Step 3: 确定图遍历的起始点
   let startAtomIds = seedAtomIds || []
   if (semanticAtomIds.length > 0) {
     // 合并语义搜索结果和用户指定的起始点
@@ -113,7 +124,7 @@ export async function hybridSearch(options: HybridSearchOptions): Promise<Hybrid
     }
   }
 
-  // Step 3: 图遍历
+  // Step 4: 图遍历
   const traversedAtoms = await traverseAtomGraph({
     seedAtomIds: startAtomIds,
     maxDepth,
@@ -122,11 +133,18 @@ export async function hybridSearch(options: HybridSearchOptions): Promise<Hybrid
     atomTypes,
   })
 
-  // Step 4: 为 atoms 添加 embeddings（用于评分）
+  // Step 5: 应用社区过滤到遍历结果
+  let filteredAtoms = traversedAtoms
+  if (communityAtomIds.length > 0) {
+    const communitySet = new Set(communityAtomIds)
+    filteredAtoms = traversedAtoms.filter((atom) => communitySet.has(atom.atom.atom_id))
+  }
+
+  // Step 6: 为 atoms 添加 embeddings（用于评分）
   if (queryEmbedding) {
     const cache = await loadEmbeddingCache()
 
-    for (const atom of traversedAtoms) {
+    for (const atom of filteredAtoms) {
       if (atom.claim) {
         const embedding = await getAtomEmbedding(atom.atom.atom_id, atom.claim, cache)
         atom.claimEmbedding = embedding
@@ -136,13 +154,13 @@ export async function hybridSearch(options: HybridSearchOptions): Promise<Hybrid
     await saveEmbeddingCache(cache)
   }
 
-  // Step 5: 智能评分和排序
-  const scoredAtoms = scoreAndRankAtoms(traversedAtoms, queryEmbedding, scoringWeights)
+  // Step 7: 智能评分和排序
+  const scoredAtoms = scoreAndRankAtoms(filteredAtoms, queryEmbedding, scoringWeights)
 
-  // Step 6: 选择多样化的 atoms
+  // Step 8: 选择多样化的 atoms
   let selectedAtoms = selectDiverseAtoms(scoredAtoms, maxAtoms, diversityWeight)
 
-  // Step 7: Token 预算管理（如果指定了）
+  // Step 9: Token 预算管理（如果指定了）
   let tokensUsed: number | undefined
   let budgetUsed: number | undefined
 
@@ -298,4 +316,49 @@ export async function graphOnlySearch(options: {
       fromGraphTraversal: traversedAtoms.length,
     },
   }
+}
+
+/**
+ * 应用社区过滤（Phase 3）
+ *
+ * 根据社区过滤条件返回符合条件的 atom IDs
+ */
+async function applyCommunityFilter(filter: CommunityFilterOptions): Promise<string[]> {
+  const cache = await loadCommunityCache()
+  if (!cache) {
+    return []
+  }
+
+  let communities = Object.values(cache.communities)
+
+  // 按社区 ID 过滤
+  if (filter.communityIds && filter.communityIds.length > 0) {
+    const idSet = new Set(filter.communityIds)
+    communities = communities.filter((c) => idSet.has(c.id))
+  }
+
+  // 按社区大小过滤
+  if (filter.minCommunitySize !== undefined) {
+    communities = communities.filter((c) => c.size >= filter.minCommunitySize!)
+  }
+
+  if (filter.maxCommunitySize !== undefined) {
+    communities = communities.filter((c) => c.size <= filter.maxCommunitySize!)
+  }
+
+  // 按主导类型过滤
+  if (filter.dominantTypes && filter.dominantTypes.length > 0) {
+    const typeSet = new Set(filter.dominantTypes)
+    communities = communities.filter((c) => typeSet.has(c.dominantType))
+  }
+
+  // 收集所有符合条件的社区中的 atom IDs
+  const atomIds = new Set<string>()
+  for (const community of communities) {
+    for (const atomId of community.atomIds) {
+      atomIds.add(atomId)
+    }
+  }
+
+  return Array.from(atomIds)
 }

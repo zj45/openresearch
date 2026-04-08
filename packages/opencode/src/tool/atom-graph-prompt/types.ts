@@ -34,3 +34,22 @@ export interface AtomContent {
   claim: string
   evidence: string
 }
+
+// Phase 3: Community Detection Types
+export interface Community {
+  id: string
+  atomIds: string[]
+  summary: string
+  keywords: string[]
+  dominantType: AtomType
+  size: number
+  density: number
+  timestamp: number
+}
+
+export interface CommunityFilterOptions {
+  communityIds?: string[]
+  minCommunitySize?: number
+  maxCommunitySize?: number
+  dominantTypes?: AtomType[]
+}

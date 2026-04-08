@@ -54,6 +54,15 @@ export const AtomGraphPromptSmartTool = Tool.define("atom_graph_prompt_smart", {
       .optional()
       .describe("评分权重配置（可选）"),
 
+    // Phase 3: 社区过滤参数
+    communityIds: z.array(z.string()).optional().describe("只包含指定社区 ID 中的 atoms"),
+    minCommunitySize: z.number().optional().describe("只包含社区大小 >= 此值的 atoms"),
+    maxCommunitySize: z.number().optional().describe("只包含社区大小 <= 此值的 atoms"),
+    communityDominantTypes: z
+      .array(z.enum(["fact", "method", "theorem", "verification"]))
+      .optional()
+      .describe("只包含主导类型为指定类型的社区中的 atoms"),
+
     // Token 预算
     maxTokens: z.number().optional().describe("最大 token 数量限制（可选）。如果指定，会自动调整内容以适应预算"),
 
@@ -112,6 +121,15 @@ export const AtomGraphPromptSmartTool = Tool.define("atom_graph_prompt_smart", {
       atomTypes: params.atomTypes as AtomType[] | undefined,
       semanticTopK: params.semanticTopK,
       semanticThreshold: params.semanticThreshold,
+      communityFilter:
+        params.communityIds || params.minCommunitySize || params.maxCommunitySize || params.communityDominantTypes
+          ? {
+              communityIds: params.communityIds,
+              minCommunitySize: params.minCommunitySize,
+              maxCommunitySize: params.maxCommunitySize,
+              dominantTypes: params.communityDominantTypes as AtomType[] | undefined,
+            }
+          : undefined,
       maxAtoms: params.maxAtoms,
       diversityWeight: params.diversityWeight,
       scoringWeights: params.scoringWeights || DEFAULT_WEIGHTS,

@@ -521,7 +521,248 @@ const result = await agent.useTool("atom_graph_prompt_smart", {
 
 ---
 
+## Phase 3: 社区检测 (Community Detection) ✨
+
+### 概述
+
+Phase 3.1 引入了基于 Louvain 算法的社区检测功能，可以自动识别 Atom Graph 中的社区结构，并支持按社区过滤和查询。
+
+### 核心功能
+
+#### 1. 自动社区检测
+
+使用 Louvain 算法自动检测 Atom Graph 中的社区：
+
+```typescript
+import { detectCommunities } from "./tool/atom-graph-prompt/community"
+
+// 检测社区
+const cache = await detectCommunities({
+  resolution: 1.0, // Louvain 分辨率参数（默认 1.0）
+  minCommunitySize: 2, // 最小社区大小（默认 2）
+  forceRefresh: false, // 是否强制刷新缓存
+})
+
+console.log(`发现 ${Object.keys(cache.communities).length} 个社区`)
+```
+
+#### 2. 社区查询
+
+支持多种方式查询社区：
+
+```typescript
+import { queryCommunities } from "./tool/atom-graph-prompt/community"
+
+// 按自然语言查询
+const communities = await queryCommunities({
+  query: "深度学习优化方法",
+  topK: 5,
+})
+
+// 按社区大小过滤
+const largeCommunities = await queryCommunities({
+  minSize: 5,
+  maxSize: 20,
+  topK: 10,
+})
+
+// 按主导类型过滤
+const methodCommunities = await queryCommunities({
+  atomTypes: ["method", "theorem"],
+  topK: 10,
+})
+```
+
+#### 3. 社区统计信息
+
+获取社区的统计数据：
+
+```typescript
+import { getCommunityStats } from "./tool/atom-graph-prompt/community"
+
+const stats = await getCommunityStats()
+console.log(`总社区数: ${stats.totalCommunities}`)
+console.log(`总 atoms: ${stats.totalAtoms}`)
+console.log(`平均社区大小: ${stats.avgCommunitySize.toFixed(2)}`)
+console.log(`最大社区: ${stats.largestCommunity}`)
+console.log(`平均密度: ${stats.avgDensity.toFixed(3)}`)
+```
+
+#### 4. 查询 Atom 所属社区
+
+```typescript
+import { getAtomCommunity } from "./tool/atom-graph-prompt/community"
+
+const community = await getAtomCommunity("atom-123")
+if (community) {
+  console.log(`社区 ID: ${community.id}`)
+  console.log(`社区大小: ${community.size}`)
+  console.log(`主导类型: ${community.dominantType}`)
+  console.log(`摘要: ${community.summary}`)
+}
+```
+
+### 集成到智能工具
+
+Phase 3.1 已集成到 `atom_graph_prompt_smart` 工具中，支持按社区过滤：
+
+```typescript
+// 只包含特定社区的 atoms
+const result = await agent.useTool("atom_graph_prompt_smart", {
+  query: "模型优化方法",
+  communityIds: ["community-1", "community-3"],
+  maxAtoms: 10,
+})
+
+// 只包含大型社区的 atoms
+const result = await agent.useTool("atom_graph_prompt_smart", {
+  query: "深度学习",
+  minCommunitySize: 5,
+  maxCommunitySize: 20,
+  maxAtoms: 15,
+})
+
+// 只包含特定类型主导的社区
+const result = await agent.useTool("atom_graph_prompt_smart", {
+  query: "理论证明",
+  communityDominantTypes: ["theorem", "verification"],
+  maxAtoms: 10,
+})
+```
+
+### 社区数据结构
+
+```typescript
+interface Community {
+  id: string // 社区 ID
+  atomIds: string[] // 社区内的 atom IDs
+  summary: string // 自动生成的摘要
+  keywords: string[] // 关键词列表
+  dominantType: AtomType // 主导 atom 类型
+  size: number // 社区大小
+  density: number // 社区密度（0-1）
+  timestamp: number // 创建时间戳
+}
+```
+
+### 缓存机制
+
+- **缓存位置**: `atom_list/.atom-communities-cache.json`
+- **自动管理**: 首次检测时生成，后续从缓存读取
+- **版本控制**: 支持缓存版本检查
+- **手动刷新**: 使用 `refreshCommunities()` 强制刷新
+
+```typescript
+import { refreshCommunities } from "./tool/atom-graph-prompt/community"
+
+// 强制刷新社区缓存
+const cache = await refreshCommunities({ minCommunitySize: 3 })
+```
+
+### 使用场景
+
+#### 场景 1: 发现研究主题
+
+```typescript
+// 自动发现研究中的主要主题
+const communities = await queryCommunities({ topK: 10 })
+
+for (const comm of communities) {
+  console.log(`主题: ${comm.keywords.join(", ")}`)
+  console.log(`类型: ${comm.dominantType}`)
+  console.log(`规模: ${comm.size} atoms`)
+  console.log(`摘要: ${comm.summary}`)
+  console.log("---")
+}
+```
+
+#### 场景 2: 聚焦特定研究领域
+
+```typescript
+// 查询特定领域的社区
+const mlCommunities = await queryCommunities({
+  query: "机器学习优化算法",
+  topK: 5,
+})
+
+// 从这些社区生成 prompt
+const result = await agent.useTool("atom_graph_prompt_smart", {
+  communityIds: mlCommunities.map((c) => c.id),
+  maxAtoms: 20,
+  template: "graphrag",
+})
+```
+
+#### 场景 3: 分析社区结构
+
+```typescript
+// 获取统计信息
+const stats = await getCommunityStats()
+
+// 找出最大的社区
+const communities = await queryCommunities({ topK: 100 })
+const largest = communities.sort((a, b) => b.size - a.size)[0]
+
+console.log(`最大社区有 ${largest.size} 个 atoms`)
+console.log(`关键词: ${largest.keywords.join(", ")}`)
+
+// 获取该社区的所有 atoms
+const atomIds = await getCommunityAtoms(largest.id)
+```
+
+### 算法说明
+
+**Louvain 算法**:
+
+- 模块度优化的社区检测算法
+- 支持分辨率参数调整社区粒度
+- 高效处理大规模图
+
+**社区密度**:
+
+- 计算公式: 内部边数 / 最大可能边数
+- 反映社区内部连接紧密程度
+- 范围: 0-1，越高越紧密
+
+**主导类型识别**:
+
+- 统计社区内各 atom 类型数量
+- 选择数量最多的类型作为主导类型
+- 用于快速了解社区特征
+
+**自动摘要生成**:
+
+- 提取 atom 名称作为关键词
+- 统计类型分布
+- 生成简洁的文本摘要
+
+### 最佳实践
+
+1. **首次使用**: 先运行 `detectCommunities()` 生成缓存
+2. **定期刷新**: 当 Atom Graph 有重大变化时，使用 `refreshCommunities()` 更新
+3. **合理设置大小**: 使用 `minCommunitySize` 过滤掉过小的社区
+4. **结合查询**: 将社区过滤与语义搜索结合使用，获得最佳结果
+5. **监控统计**: 定期查看 `getCommunityStats()` 了解图结构变化
+
+### 性能考虑
+
+- **首次检测**: 需要遍历整个图，时间与 atom 数量相关
+- **后续查询**: 使用缓存，响应快速
+- **大规模图**: Louvain 算法高效，可处理数千个节点
+- **缓存大小**: 缓存文件大小与社区数量成正比
+
+---
+
 ## 更新日志
+
+### 2026-04-08 - Phase 3.1 发布 ✨
+
+- ✨ 新增社区检测功能（Louvain 算法）
+- ✨ 支持按社区过滤和查询
+- ✨ 自动生成社区摘要和关键词
+- ✨ 社区统计信息
+- ✨ 集成到 `atom_graph_prompt_smart` 工具
+- ✅ 文件缓存系统（不改动数据库）
 
 ### 2026-04-07 - Phase 2 发布 ✨
 
