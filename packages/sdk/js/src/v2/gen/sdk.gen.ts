@@ -169,6 +169,8 @@ import type {
   ResearchServerCreateResponses,
   ResearchServerDeleteErrors,
   ResearchServerDeleteResponses,
+  ResearchServerImportSshConfigErrors,
+  ResearchServerImportSshConfigResponses,
   ResearchServerListResponses,
   ResearchSessionAtomGetErrors,
   ResearchSessionAtomGetResponses,
@@ -3600,15 +3602,36 @@ export class Server extends HeyApiClient {
     parameters?: {
       directory?: string
       workspace?: string
-      config?: {
-        address: string
-        port: number
-        user: string
-        password: string
-        resource_root?: string
-        wandb_api_key?: string
-        wandb_project_name?: string
-      }
+      config?:
+        | {
+            mode: "direct"
+            address: string
+            port: number
+            user: string
+            password?: string
+            resource_root?: string
+            wandb_api_key?: string
+            wandb_project_name?: string
+          }
+        | {
+            mode: "ssh_config"
+            host_alias: string
+            ssh_config_path?: string
+            user?: string
+            password?: string
+            resource_root?: string
+            wandb_api_key?: string
+            wandb_project_name?: string
+          }
+        | {
+            address: string
+            port: number
+            user: string
+            password?: string
+            resource_root?: string
+            wandb_api_key?: string
+            wandb_project_name?: string
+          }
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3626,6 +3649,45 @@ export class Server extends HeyApiClient {
     )
     return (options?.client ?? this.client).post<ResearchServerCreateResponses, unknown, ThrowOnError>({
       url: "/research/server",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Import remote servers from SSH config
+   */
+  public importSshConfig<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      path?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "path" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      ResearchServerImportSshConfigResponses,
+      ResearchServerImportSshConfigErrors,
+      ThrowOnError
+    >({
+      url: "/research/server/import-ssh-config",
       ...options,
       ...params,
       headers: {

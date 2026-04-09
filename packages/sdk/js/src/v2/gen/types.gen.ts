@@ -4522,15 +4522,28 @@ export type ResearchSessionAtomGetResponses = {
         exp_result_summary_path: string | null
         exp_plan_path: string | null
         remote_server_id: string | null
-        remote_server_config: {
-          address: string
-          port: number
-          user: string
-          password: string
-          resource_root?: string
-          wandb_api_key?: string
-          wandb_project_name?: string
-        } | null
+        remote_server_config:
+          | {
+              mode: "direct"
+              address: string
+              port: number
+              user: string
+              password?: string
+              resource_root?: string
+              wandb_api_key?: string
+              wandb_project_name?: string
+            }
+          | {
+              mode: "ssh_config"
+              host_alias: string
+              ssh_config_path?: string
+              user?: string
+              password?: string
+              resource_root?: string
+              wandb_api_key?: string
+              wandb_project_name?: string
+            }
+          | null
         code_path: string
         status: "pending" | "running" | "done" | "idle" | "failed"
         started_at: number | null
@@ -4927,15 +4940,28 @@ export type ResearchExperimentBySessionResponses = {
     exp_result_summary_path: string | null
     exp_plan_path: string | null
     remote_server_id: string | null
-    remote_server_config: {
-      address: string
-      port: number
-      user: string
-      password: string
-      resource_root?: string
-      wandb_api_key?: string
-      wandb_project_name?: string
-    } | null
+    remote_server_config:
+      | {
+          mode: "direct"
+          address: string
+          port: number
+          user: string
+          password?: string
+          resource_root?: string
+          wandb_api_key?: string
+          wandb_project_name?: string
+        }
+      | {
+          mode: "ssh_config"
+          host_alias: string
+          ssh_config_path?: string
+          user?: string
+          password?: string
+          resource_root?: string
+          wandb_api_key?: string
+          wandb_project_name?: string
+        }
+      | null
     code_path: string
     status: "pending" | "running" | "done" | "idle" | "failed"
     started_at: number | null
@@ -5078,15 +5104,27 @@ export type ResearchServerListResponses = {
    */
   200: Array<{
     id: string
-    config: {
-      address: string
-      port: number
-      user: string
-      password: string
-      resource_root?: string
-      wandb_api_key?: string
-      wandb_project_name?: string
-    }
+    config:
+      | {
+          mode: "direct"
+          address: string
+          port: number
+          user: string
+          password?: string
+          resource_root?: string
+          wandb_api_key?: string
+          wandb_project_name?: string
+        }
+      | {
+          mode: "ssh_config"
+          host_alias: string
+          ssh_config_path?: string
+          user?: string
+          password?: string
+          resource_root?: string
+          wandb_api_key?: string
+          wandb_project_name?: string
+        }
     time_created: number
     time_updated: number
   }>
@@ -5096,15 +5134,36 @@ export type ResearchServerListResponse = ResearchServerListResponses[keyof Resea
 
 export type ResearchServerCreateData = {
   body?: {
-    config: {
-      address: string
-      port: number
-      user: string
-      password: string
-      resource_root?: string
-      wandb_api_key?: string
-      wandb_project_name?: string
-    }
+    config:
+      | {
+          mode: "direct"
+          address: string
+          port: number
+          user: string
+          password?: string
+          resource_root?: string
+          wandb_api_key?: string
+          wandb_project_name?: string
+        }
+      | {
+          mode: "ssh_config"
+          host_alias: string
+          ssh_config_path?: string
+          user?: string
+          password?: string
+          resource_root?: string
+          wandb_api_key?: string
+          wandb_project_name?: string
+        }
+      | {
+          address: string
+          port: number
+          user: string
+          password?: string
+          resource_root?: string
+          wandb_api_key?: string
+          wandb_project_name?: string
+        }
   }
   path?: never
   query?: {
@@ -5120,19 +5179,89 @@ export type ResearchServerCreateResponses = {
    */
   200: {
     id: string
-    config: {
-      address: string
-      port: number
-      user: string
-      password: string
-      resource_root?: string
-      wandb_api_key?: string
-      wandb_project_name?: string
-    }
+    config:
+      | {
+          mode: "direct"
+          address: string
+          port: number
+          user: string
+          password?: string
+          resource_root?: string
+          wandb_api_key?: string
+          wandb_project_name?: string
+        }
+      | {
+          mode: "ssh_config"
+          host_alias: string
+          ssh_config_path?: string
+          user?: string
+          password?: string
+          resource_root?: string
+          wandb_api_key?: string
+          wandb_project_name?: string
+        }
   }
 }
 
 export type ResearchServerCreateResponse = ResearchServerCreateResponses[keyof ResearchServerCreateResponses]
+
+export type ResearchServerImportSshConfigData = {
+  body?: {
+    path: string
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/research/server/import-ssh-config"
+}
+
+export type ResearchServerImportSshConfigErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ResearchServerImportSshConfigError =
+  ResearchServerImportSshConfigErrors[keyof ResearchServerImportSshConfigErrors]
+
+export type ResearchServerImportSshConfigResponses = {
+  /**
+   * Imported remote servers
+   */
+  200: {
+    imported: Array<{
+      id: string
+      config:
+        | {
+            mode: "direct"
+            address: string
+            port: number
+            user: string
+            password?: string
+            resource_root?: string
+            wandb_api_key?: string
+            wandb_project_name?: string
+          }
+        | {
+            mode: "ssh_config"
+            host_alias: string
+            ssh_config_path?: string
+            user?: string
+            password?: string
+            resource_root?: string
+            wandb_api_key?: string
+            wandb_project_name?: string
+          }
+    }>
+    skipped: Array<string>
+  }
+}
+
+export type ResearchServerImportSshConfigResponse =
+  ResearchServerImportSshConfigResponses[keyof ResearchServerImportSshConfigResponses]
 
 export type ResearchServerDeleteData = {
   body?: never
@@ -5396,15 +5525,28 @@ export type ResearchExperimentUpdateResponses = {
     exp_result_summary_path: string | null
     exp_plan_path: string | null
     remote_server_id: string | null
-    remote_server_config: {
-      address: string
-      port: number
-      user: string
-      password: string
-      resource_root?: string
-      wandb_api_key?: string
-      wandb_project_name?: string
-    } | null
+    remote_server_config:
+      | {
+          mode: "direct"
+          address: string
+          port: number
+          user: string
+          password?: string
+          resource_root?: string
+          wandb_api_key?: string
+          wandb_project_name?: string
+        }
+      | {
+          mode: "ssh_config"
+          host_alias: string
+          ssh_config_path?: string
+          user?: string
+          password?: string
+          resource_root?: string
+          wandb_api_key?: string
+          wandb_project_name?: string
+        }
+      | null
     code_path: string
     status: "pending" | "running" | "done" | "idle" | "failed"
     started_at: number | null
