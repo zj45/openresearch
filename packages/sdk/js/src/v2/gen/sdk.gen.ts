@@ -173,6 +173,8 @@ import type {
   ResearchServerCreateResponses,
   ResearchServerDeleteErrors,
   ResearchServerDeleteResponses,
+  ResearchServerImportSshConfigErrors,
+  ResearchServerImportSshConfigResponses,
   ResearchServerListResponses,
   ResearchSessionAtomGetErrors,
   ResearchSessionAtomGetResponses,
@@ -223,6 +225,8 @@ import type {
   SessionUnshareResponses,
   SessionUpdateErrors,
   SessionUpdateResponses,
+  SessionWorkflowErrors,
+  SessionWorkflowResponses,
   SubtaskPartInput,
   TextPartInput,
   ToolIdsErrors,
@@ -1628,6 +1632,38 @@ export class Session2 extends HeyApiClient {
     )
     return (options?.client ?? this.client).get<SessionTodoResponses, SessionTodoErrors, ThrowOnError>({
       url: "/session/{sessionID}/todo",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get session workflow
+   *
+   * Retrieve the latest workflow state for a session.
+   */
+  public workflow<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<SessionWorkflowResponses, SessionWorkflowErrors, ThrowOnError>({
+      url: "/session/{sessionID}/workflow",
       ...options,
       ...params,
     })
@@ -3649,15 +3685,36 @@ export class Server extends HeyApiClient {
     parameters?: {
       directory?: string
       workspace?: string
-      config?: {
-        address: string
-        port: number
-        user: string
-        password: string
-        resource_root?: string
-        wandb_api_key?: string
-        wandb_project_name?: string
-      }
+      config?:
+        | {
+            mode: "direct"
+            address: string
+            port: number
+            user: string
+            password?: string
+            resource_root?: string
+            wandb_api_key?: string
+            wandb_project_name?: string
+          }
+        | {
+            mode: "ssh_config"
+            host_alias: string
+            ssh_config_path?: string
+            user?: string
+            password?: string
+            resource_root?: string
+            wandb_api_key?: string
+            wandb_project_name?: string
+          }
+        | {
+            address: string
+            port: number
+            user: string
+            password?: string
+            resource_root?: string
+            wandb_api_key?: string
+            wandb_project_name?: string
+          }
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3675,6 +3732,45 @@ export class Server extends HeyApiClient {
     )
     return (options?.client ?? this.client).post<ResearchServerCreateResponses, unknown, ThrowOnError>({
       url: "/research/server",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Import remote servers from SSH config
+   */
+  public importSshConfig<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      path?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "path" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      ResearchServerImportSshConfigResponses,
+      ResearchServerImportSshConfigErrors,
+      ThrowOnError
+    >({
+      url: "/research/server/import-ssh-config",
       ...options,
       ...params,
       headers: {
