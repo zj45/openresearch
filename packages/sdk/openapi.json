@@ -5973,31 +5973,70 @@
                                   "remote_server_config": {
                                     "anyOf": [
                                       {
-                                        "type": "object",
-                                        "properties": {
-                                          "address": {
-                                            "type": "string"
+                                        "anyOf": [
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "mode": {
+                                                "type": "string",
+                                                "const": "direct"
+                                              },
+                                              "address": {
+                                                "type": "string"
+                                              },
+                                              "port": {
+                                                "type": "number"
+                                              },
+                                              "user": {
+                                                "type": "string"
+                                              },
+                                              "password": {
+                                                "type": "string"
+                                              },
+                                              "resource_root": {
+                                                "type": "string"
+                                              },
+                                              "wandb_api_key": {
+                                                "type": "string"
+                                              },
+                                              "wandb_project_name": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": ["mode", "address", "port", "user"]
                                           },
-                                          "port": {
-                                            "type": "number"
-                                          },
-                                          "user": {
-                                            "type": "string"
-                                          },
-                                          "password": {
-                                            "type": "string"
-                                          },
-                                          "resource_root": {
-                                            "type": "string"
-                                          },
-                                          "wandb_api_key": {
-                                            "type": "string"
-                                          },
-                                          "wandb_project_name": {
-                                            "type": "string"
+                                          {
+                                            "type": "object",
+                                            "properties": {
+                                              "mode": {
+                                                "type": "string",
+                                                "const": "ssh_config"
+                                              },
+                                              "host_alias": {
+                                                "type": "string"
+                                              },
+                                              "ssh_config_path": {
+                                                "type": "string"
+                                              },
+                                              "user": {
+                                                "type": "string"
+                                              },
+                                              "password": {
+                                                "type": "string"
+                                              },
+                                              "resource_root": {
+                                                "type": "string"
+                                              },
+                                              "wandb_api_key": {
+                                                "type": "string"
+                                              },
+                                              "wandb_project_name": {
+                                                "type": "string"
+                                              }
+                                            },
+                                            "required": ["mode", "host_alias"]
                                           }
-                                        },
-                                        "required": ["address", "port", "user", "password"]
+                                        ]
                                       },
                                       {
                                         "type": "null"
@@ -7061,31 +7100,70 @@
                         "remote_server_config": {
                           "anyOf": [
                             {
-                              "type": "object",
-                              "properties": {
-                                "address": {
-                                  "type": "string"
+                              "anyOf": [
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "mode": {
+                                      "type": "string",
+                                      "const": "direct"
+                                    },
+                                    "address": {
+                                      "type": "string"
+                                    },
+                                    "port": {
+                                      "type": "number"
+                                    },
+                                    "user": {
+                                      "type": "string"
+                                    },
+                                    "password": {
+                                      "type": "string"
+                                    },
+                                    "resource_root": {
+                                      "type": "string"
+                                    },
+                                    "wandb_api_key": {
+                                      "type": "string"
+                                    },
+                                    "wandb_project_name": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": ["mode", "address", "port", "user"]
                                 },
-                                "port": {
-                                  "type": "number"
-                                },
-                                "user": {
-                                  "type": "string"
-                                },
-                                "password": {
-                                  "type": "string"
-                                },
-                                "resource_root": {
-                                  "type": "string"
-                                },
-                                "wandb_api_key": {
-                                  "type": "string"
-                                },
-                                "wandb_project_name": {
-                                  "type": "string"
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "mode": {
+                                      "type": "string",
+                                      "const": "ssh_config"
+                                    },
+                                    "host_alias": {
+                                      "type": "string"
+                                    },
+                                    "ssh_config_path": {
+                                      "type": "string"
+                                    },
+                                    "user": {
+                                      "type": "string"
+                                    },
+                                    "password": {
+                                      "type": "string"
+                                    },
+                                    "resource_root": {
+                                      "type": "string"
+                                    },
+                                    "wandb_api_key": {
+                                      "type": "string"
+                                    },
+                                    "wandb_project_name": {
+                                      "type": "string"
+                                    }
+                                  },
+                                  "required": ["mode", "host_alias"]
                                 }
-                              },
-                              "required": ["address", "port", "user", "password"]
+                              ]
                             },
                             {
                               "type": "null"
@@ -7622,31 +7700,70 @@
                         "type": "string"
                       },
                       "config": {
-                        "type": "object",
-                        "properties": {
-                          "address": {
-                            "type": "string"
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "mode": {
+                                "type": "string",
+                                "const": "direct"
+                              },
+                              "address": {
+                                "type": "string"
+                              },
+                              "port": {
+                                "type": "number"
+                              },
+                              "user": {
+                                "type": "string"
+                              },
+                              "password": {
+                                "type": "string"
+                              },
+                              "resource_root": {
+                                "type": "string"
+                              },
+                              "wandb_api_key": {
+                                "type": "string"
+                              },
+                              "wandb_project_name": {
+                                "type": "string"
+                              }
+                            },
+                            "required": ["mode", "address", "port", "user"]
                           },
-                          "port": {
-                            "type": "number"
-                          },
-                          "user": {
-                            "type": "string"
-                          },
-                          "password": {
-                            "type": "string"
-                          },
-                          "resource_root": {
-                            "type": "string"
-                          },
-                          "wandb_api_key": {
-                            "type": "string"
-                          },
-                          "wandb_project_name": {
-                            "type": "string"
+                          {
+                            "type": "object",
+                            "properties": {
+                              "mode": {
+                                "type": "string",
+                                "const": "ssh_config"
+                              },
+                              "host_alias": {
+                                "type": "string"
+                              },
+                              "ssh_config_path": {
+                                "type": "string"
+                              },
+                              "user": {
+                                "type": "string"
+                              },
+                              "password": {
+                                "type": "string"
+                              },
+                              "resource_root": {
+                                "type": "string"
+                              },
+                              "wandb_api_key": {
+                                "type": "string"
+                              },
+                              "wandb_project_name": {
+                                "type": "string"
+                              }
+                            },
+                            "required": ["mode", "host_alias"]
                           }
-                        },
-                        "required": ["address", "port", "user", "password"]
+                        ]
                       },
                       "time_created": {
                         "type": "number"
@@ -7700,31 +7817,70 @@
                       "type": "string"
                     },
                     "config": {
-                      "type": "object",
-                      "properties": {
-                        "address": {
-                          "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "mode": {
+                              "type": "string",
+                              "const": "direct"
+                            },
+                            "address": {
+                              "type": "string"
+                            },
+                            "port": {
+                              "type": "number"
+                            },
+                            "user": {
+                              "type": "string"
+                            },
+                            "password": {
+                              "type": "string"
+                            },
+                            "resource_root": {
+                              "type": "string"
+                            },
+                            "wandb_api_key": {
+                              "type": "string"
+                            },
+                            "wandb_project_name": {
+                              "type": "string"
+                            }
+                          },
+                          "required": ["mode", "address", "port", "user"]
                         },
-                        "port": {
-                          "type": "number"
-                        },
-                        "user": {
-                          "type": "string"
-                        },
-                        "password": {
-                          "type": "string"
-                        },
-                        "resource_root": {
-                          "type": "string"
-                        },
-                        "wandb_api_key": {
-                          "type": "string"
-                        },
-                        "wandb_project_name": {
-                          "type": "string"
+                        {
+                          "type": "object",
+                          "properties": {
+                            "mode": {
+                              "type": "string",
+                              "const": "ssh_config"
+                            },
+                            "host_alias": {
+                              "type": "string"
+                            },
+                            "ssh_config_path": {
+                              "type": "string"
+                            },
+                            "user": {
+                              "type": "string"
+                            },
+                            "password": {
+                              "type": "string"
+                            },
+                            "resource_root": {
+                              "type": "string"
+                            },
+                            "wandb_api_key": {
+                              "type": "string"
+                            },
+                            "wandb_project_name": {
+                              "type": "string"
+                            }
+                          },
+                          "required": ["mode", "host_alias"]
                         }
-                      },
-                      "required": ["address", "port", "user", "password"]
+                      ]
                     }
                   },
                   "required": ["id", "config"]
@@ -7740,31 +7896,97 @@
                 "type": "object",
                 "properties": {
                   "config": {
-                    "type": "object",
-                    "properties": {
-                      "address": {
-                        "type": "string"
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "mode": {
+                            "type": "string",
+                            "const": "direct"
+                          },
+                          "address": {
+                            "type": "string"
+                          },
+                          "port": {
+                            "type": "number"
+                          },
+                          "user": {
+                            "type": "string"
+                          },
+                          "password": {
+                            "type": "string"
+                          },
+                          "resource_root": {
+                            "type": "string"
+                          },
+                          "wandb_api_key": {
+                            "type": "string"
+                          },
+                          "wandb_project_name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["mode", "address", "port", "user"]
                       },
-                      "port": {
-                        "type": "number"
+                      {
+                        "type": "object",
+                        "properties": {
+                          "mode": {
+                            "type": "string",
+                            "const": "ssh_config"
+                          },
+                          "host_alias": {
+                            "type": "string"
+                          },
+                          "ssh_config_path": {
+                            "type": "string"
+                          },
+                          "user": {
+                            "type": "string"
+                          },
+                          "password": {
+                            "type": "string"
+                          },
+                          "resource_root": {
+                            "type": "string"
+                          },
+                          "wandb_api_key": {
+                            "type": "string"
+                          },
+                          "wandb_project_name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["mode", "host_alias"]
                       },
-                      "user": {
-                        "type": "string"
-                      },
-                      "password": {
-                        "type": "string"
-                      },
-                      "resource_root": {
-                        "type": "string"
-                      },
-                      "wandb_api_key": {
-                        "type": "string"
-                      },
-                      "wandb_project_name": {
-                        "type": "string"
+                      {
+                        "type": "object",
+                        "properties": {
+                          "address": {
+                            "type": "string"
+                          },
+                          "port": {
+                            "type": "number"
+                          },
+                          "user": {
+                            "type": "string"
+                          },
+                          "password": {
+                            "type": "string"
+                          },
+                          "resource_root": {
+                            "type": "string"
+                          },
+                          "wandb_api_key": {
+                            "type": "string"
+                          },
+                          "wandb_project_name": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["address", "port", "user"]
                       }
-                    },
-                    "required": ["address", "port", "user", "password"]
+                    ]
                   }
                 },
                 "required": ["config"]
@@ -7776,6 +7998,158 @@
           {
             "lang": "js",
             "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.research.server.create({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/research/server/import-ssh-config": {
+      "post": {
+        "operationId": "research.server.importSshConfig",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "directory",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "workspace",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "summary": "Import remote servers from SSH config",
+        "responses": {
+          "200": {
+            "description": "Imported remote servers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "imported": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "config": {
+                            "anyOf": [
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "mode": {
+                                    "type": "string",
+                                    "const": "direct"
+                                  },
+                                  "address": {
+                                    "type": "string"
+                                  },
+                                  "port": {
+                                    "type": "number"
+                                  },
+                                  "user": {
+                                    "type": "string"
+                                  },
+                                  "password": {
+                                    "type": "string"
+                                  },
+                                  "resource_root": {
+                                    "type": "string"
+                                  },
+                                  "wandb_api_key": {
+                                    "type": "string"
+                                  },
+                                  "wandb_project_name": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": ["mode", "address", "port", "user"]
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "mode": {
+                                    "type": "string",
+                                    "const": "ssh_config"
+                                  },
+                                  "host_alias": {
+                                    "type": "string"
+                                  },
+                                  "ssh_config_path": {
+                                    "type": "string"
+                                  },
+                                  "user": {
+                                    "type": "string"
+                                  },
+                                  "password": {
+                                    "type": "string"
+                                  },
+                                  "resource_root": {
+                                    "type": "string"
+                                  },
+                                  "wandb_api_key": {
+                                    "type": "string"
+                                  },
+                                  "wandb_project_name": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": ["mode", "host_alias"]
+                              }
+                            ]
+                          }
+                        },
+                        "required": ["id", "config"]
+                      }
+                    },
+                    "skipped": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": ["imported", "skipped"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  }
+                },
+                "required": ["path"]
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createOpencodeClient } from \"@opencode-ai/sdk\n\nconst client = createOpencodeClient()\nawait client.research.server.importSshConfig({\n  ...\n})"
           }
         ]
       }
@@ -8477,31 +8851,70 @@
                     "remote_server_config": {
                       "anyOf": [
                         {
-                          "type": "object",
-                          "properties": {
-                            "address": {
-                              "type": "string"
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "mode": {
+                                  "type": "string",
+                                  "const": "direct"
+                                },
+                                "address": {
+                                  "type": "string"
+                                },
+                                "port": {
+                                  "type": "number"
+                                },
+                                "user": {
+                                  "type": "string"
+                                },
+                                "password": {
+                                  "type": "string"
+                                },
+                                "resource_root": {
+                                  "type": "string"
+                                },
+                                "wandb_api_key": {
+                                  "type": "string"
+                                },
+                                "wandb_project_name": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": ["mode", "address", "port", "user"]
                             },
-                            "port": {
-                              "type": "number"
-                            },
-                            "user": {
-                              "type": "string"
-                            },
-                            "password": {
-                              "type": "string"
-                            },
-                            "resource_root": {
-                              "type": "string"
-                            },
-                            "wandb_api_key": {
-                              "type": "string"
-                            },
-                            "wandb_project_name": {
-                              "type": "string"
+                            {
+                              "type": "object",
+                              "properties": {
+                                "mode": {
+                                  "type": "string",
+                                  "const": "ssh_config"
+                                },
+                                "host_alias": {
+                                  "type": "string"
+                                },
+                                "ssh_config_path": {
+                                  "type": "string"
+                                },
+                                "user": {
+                                  "type": "string"
+                                },
+                                "password": {
+                                  "type": "string"
+                                },
+                                "resource_root": {
+                                  "type": "string"
+                                },
+                                "wandb_api_key": {
+                                  "type": "string"
+                                },
+                                "wandb_project_name": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": ["mode", "host_alias"]
                             }
-                          },
-                          "required": ["address", "port", "user", "password"]
+                          ]
                         },
                         {
                           "type": "null"
@@ -13573,7 +13986,7 @@
         "properties": {
           "action": {
             "type": "string",
-            "enum": ["start", "enter", "next", "edit", "wait_interaction", "fail", "inspect"]
+            "enum": ["start", "next", "edit", "wait_interaction", "fail", "inspect"]
           },
           "instance": {
             "type": "object",
