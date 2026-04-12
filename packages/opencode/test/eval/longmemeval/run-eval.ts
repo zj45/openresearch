@@ -1,0 +1,170 @@
+#!/usr/bin/env bun
+/**
+ * LongMemEval Evaluation CLI
+ *
+ * Usage:
+ *   bun test/eval/longmemeval/run-eval.ts --dataset data/longmemeval_s_cleaned.json
+ *
+ * Options:
+ *   --dataset         Path to LongMemEval JSON dataset file (required)
+ *   --output          Output directory (default: test/eval/longmemeval/output/)
+ *   --max-questions   Max questions to evaluate (default: 0 = all)
+ *   --retrieval-mode  graphrag | semantic-only | full-context (default: graphrag)
+ *   --eval-mode       llm | substring (default: substring)
+ *   --chunk-strategy  turn | session | sliding-window (default: turn)
+ *   --top-k           Retrieval top K (default: 20)
+ *   --max-depth       Graph traversal max depth (default: 2)
+ *   --model           Generation model (default: gpt-4o-mini)
+ *   --eval-model      Evaluation model (default: gpt-4o)
+ *   --api-key         OpenAI API key (or set OPENAI_API_KEY env var)
+ *   --api-base        API base URL (default: https://api.openai.com/v1)
+ *
+ * Environment variables:
+ *   OPENAI_API_KEY    API key for generation and evaluation
+ *
+ * Example:
+ *   # Quick test with 10 questions, no API key needed (substring eval)
+ *   bun test/eval/longmemeval/run-eval.ts \
+ *     --dataset data/longmemeval_s_cleaned.json \
+ *     --max-questions 10 \
+ *     --eval-mode substring
+ *
+ *   # Full evaluation with GPT-4o scoring
+ *   OPENAI_API_KEY=sk-... bun test/eval/longmemeval/run-eval.ts \
+ *     --dataset data/longmemeval_s_cleaned.json \
+ *     --eval-mode llm
+ */
+
+import path from "path"
+import { parseArgs } from "util"
+import { runEvaluation, saveResults, type RetrievalMode, type EvalMode } from "./runner"
+import type { EvalConfig } from "./types"
+import { DEFAULT_CONFIG } from "./types"
+
+async function main() {
+  const { values } = parseArgs({
+    args: process.argv.slice(2),
+    options: {
+      dataset: { type: "string" },
+      output: { type: "string" },
+      "max-questions": { type: "string" },
+      "retrieval-mode": { type: "string" },
+      "eval-mode": { type: "string" },
+      "chunk-strategy": { type: "string" },
+      "top-k": { type: "string" },
+      "max-depth": { type: "string" },
+      model: { type: "string" },
+      "eval-model": { type: "string" },
+      "api-key": { type: "string" },
+      "api-base": { type: "string" },
+      help: { type: "boolean", short: "h" },
+    },
+    strict: false,
+  })
+
+  if (values.help || !values.dataset) {
+    console.log(`
+LongMemEval Evaluation for OpenResearch GraphRAG
+
+Usage:
+  bun test/eval/longmemeval/run-eval.ts --dataset <path> [options]
+
+Options:
+  --dataset           Path to LongMemEval JSON dataset file (required)
+  --output            Output directory (default: test/eval/longmemeval/output/)
+  --max-questions     Max questions to evaluate (default: 0 = all)
+  --retrieval-mode    graphrag | semantic-only | full-context (default: graphrag)
+  --eval-mode         llm | substring (default: substring)
+  --chunk-strategy    turn | session | sliding-window (default: turn)
+  --top-k             Retrieval top K (default: 20)
+  --max-depth         Graph traversal max depth (default: 2)
+  --model             Generation model (default: gpt-4o-mini)
+  --eval-model        Evaluation model (default: gpt-4o)
+  --api-key           OpenAI API key (or set OPENAI_API_KEY env var)
+  --api-base          API base URL (default: https://api.openai.com/v1)
+  -h, --help          Show this help
+`)
+    process.exit(values.help ? 0 : 1)
+  }
+
+  const retrievalMode = (values["retrieval-mode"] || "graphrag") as RetrievalMode
+  const evalMode = (values["eval-mode"] || "substring") as EvalMode
+  const outputDir =
+    values.output || path.join(__dirname, "output", `${retrievalMode}-${Date.now()}`)
+
+  const config: EvalConfig = {
+    ...DEFAULT_CONFIG,
+    datasetPath: path.resolve(values.dataset!),
+    outputDir,
+    maxQuestions: parseInt(values["max-questions"] || "0", 10),
+    chunkStrategy: (values["chunk-strategy"] as any) || DEFAULT_CONFIG.chunkStrategy,
+    retrievalTopK: parseInt(values["top-k"] || "20", 10),
+    maxDepth: parseInt(values["max-depth"] || "2", 10),
+    generationModel: values.model || DEFAULT_CONFIG.generationModel,
+    evalModel: values["eval-model"] || DEFAULT_CONFIG.evalModel,
+    apiKey: values["api-key"] || process.env.OPENAI_API_KEY || "",
+    apiBaseUrl: values["api-base"] || DEFAULT_CONFIG.apiBaseUrl,
+  }
+
+  // Validate
+  if (evalMode === "llm" && !config.apiKey) {
+    console.error("Error: --api-key or OPENAI_API_KEY required for LLM evaluation mode")
+    process.exit(1)
+  }
+
+  console.log("=" .repeat(60))
+  console.log("LongMemEval Evaluation — OpenResearch GraphRAG")
+  console.log("=" .repeat(60))
+  console.log(`Dataset:         ${config.datasetPath}`)
+  console.log(`Retrieval mode:  ${retrievalMode}`)
+  console.log(`Eval mode:       ${evalMode}`)
+  console.log(`Chunk strategy:  ${config.chunkStrategy}`)
+  console.log(`Top K:           ${config.retrievalTopK}`)
+  console.log(`Max depth:       ${config.maxDepth}`)
+  console.log(`Generation model:${config.generationModel}`)
+  console.log(`Max questions:   ${config.maxQuestions || "all"}`)
+  console.log(`Output:          ${outputDir}`)
+  console.log("=" .repeat(60))
+  console.log()
+
+  // Run evaluation
+  const result = await runEvaluation(config, retrievalMode, evalMode, (completed, total, last) => {
+    const pct = ((completed / total) * 100).toFixed(1)
+    const label = last?.evalResult.autoeval_label || "?"
+    process.stdout.write(
+      `\r[${completed}/${total}] ${pct}% — ${last?.questionId || ""} → ${label}  `,
+    )
+  })
+
+  console.log("\n")
+
+  // Print summary
+  console.log("=" .repeat(60))
+  console.log("RESULTS")
+  console.log("=" .repeat(60))
+  console.log()
+  console.log(`Overall accuracy: ${result.summary.overall.accuracy.toFixed(1)}%`)
+  console.log(`Average latency:  ${result.summary.overall.avgLatency.toFixed(2)}s`)
+  console.log(`Avg context tokens: ${Math.round(result.summary.overall.avgContextTokens)}`)
+  console.log(`Retrieval session recall: ${(result.avgRetrievalRecall.sessionRecall * 100).toFixed(1)}%`)
+  console.log(`Retrieval turn recall: ${(result.avgRetrievalRecall.turnRecall * 100).toFixed(1)}%`)
+  console.log(`Total time: ${(result.totalTimeMs / 1000).toFixed(1)}s`)
+  console.log()
+
+  // Per-type breakdown
+  console.log("By question type:")
+  for (const [type, metrics] of Object.entries(result.summary.byType)) {
+    console.log(
+      `  ${type.padEnd(30)} ${metrics.accuracy.toFixed(1).padStart(5)}% (${metrics.correct}/${metrics.total})`,
+    )
+  }
+  console.log()
+
+  // Save results
+  await saveResults(result, outputDir)
+}
+
+main().catch((err) => {
+  console.error("Fatal error:", err)
+  process.exit(1)
+})
