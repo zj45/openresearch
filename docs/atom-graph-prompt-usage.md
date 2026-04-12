@@ -744,6 +744,15 @@ const atomIds = await getCommunityAtoms(largest.id)
 4. **结合查询**: 将社区过滤与语义搜索结合使用，获得最佳结果
 5. **监控统计**: 定期查看 `getCommunityStats()` 了解图结构变化
 
+### 项目范围隔离
+
+社区检测和语义搜索**自动过滤到当前项目**。当多个研究项目共享同一数据库时，`buildGraph()` 和 `semanticSearch()` 只加载当前项目的 atoms，通过 `Instance.project.id → ResearchProjectTable → research_project_id` 链路实现。
+
+这意味着：
+- 社区检测结果只包含当前项目的 atoms
+- 语义搜索不会返回其他项目的 atoms
+- 社区缓存是按项目目录存储的（`atom_list/.atom-communities-cache.json`）
+
 ### 性能考虑
 
 - **首次检测**: 需要遍历整个图，时间与 atom 数量相关
@@ -751,9 +760,27 @@ const atomIds = await getCommunityAtoms(largest.id)
 - **大规模图**: Louvain 算法高效，可处理数千个节点
 - **缓存大小**: 缓存文件大小与社区数量成正比
 
+### 真实数据验证
+
+社区检测已在真实研究项目上验证（Doc-to-LoRA / Context Distillation，13 atoms, 36 relations）：
+
+| 社区 | 大小 | 主导类型     | 主题                         |
+| ---- | ---- | ------------ | ---------------------------- |
+| 0    | 4    | fact         | CD 动机和限制                |
+| 1    | 4    | verification | Meta-training 实验验证       |
+| 2    | 5    | verification | 架构组件（Perceiver/Chunking）|
+
+Resolution 参数敏感性：0.5→2 社区, 1.0→3 社区（推荐）, 1.5-2.0→4 社区
+
 ---
 
 ## 更新日志
+
+### 2026-04-12 - 项目范围修复 + 真实数据验证
+
+- 修复 `buildGraph()` 和 `semanticSearch()` 未按项目过滤的 bug
+- 在真实数据上验证社区检测质量（3 个语义合理的社区）
+- 验证语义查询排序符合预期
 
 ### 2026-04-08 - Phase 3.1 发布 ✨
 

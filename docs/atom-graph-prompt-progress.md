@@ -192,20 +192,70 @@ buildCommunityPrompt(
 
 ---
 
+### 2026-04-12 - 真实数据测试 + 项目范围修复 ✅
+
+**提交**: `33e8837` - fix: scope community detection and semantic search to current project
+
+#### 发现并修复的 Bug
+
+`buildGraph()`（community.ts）和 `semanticSearch()`（hybrid.ts）加载了全库所有项目的 atoms，未按 `research_project_id` 过滤。当多个研究项目共享同一数据库时，会导致社区检测结果包含跨项目的重复数据。
+
+**修复方案**:
+
+- `community.ts`: 新增 `getResearchProjectId()` 函数，通过 `Instance.project.id` 查询 `ResearchProjectTable` 获取当前项目的 `research_project_id`
+- `community.ts`: `buildGraph()` 按 `research_project_id` 过滤 atoms，只加载当前项目的数据
+- `hybrid.ts`: `semanticSearch()` 同样按项目过滤 atoms
+
+**修改文件**:
+
+- `community.ts`: +20 行（getResearchProjectId 函数 + 过滤逻辑）
+- `hybrid.ts`: +10 行（项目过滤逻辑）
+
+#### 真实数据测试结果
+
+**测试环境**: `research_project_1`（Doc-to-LoRA / Context Distillation 研究）
+
+**数据规模**:
+- 13 个 atoms（2 fact, 4 method, 7 verification）
+- 36 条关系（4 motivates, 6 derives, 26 validates）
+
+**社区检测结果（resolution=1.0, minCommunitySize=2）**:
+
+| 社区 | 大小 | 主导类型     | 密度  | 主题                                              |
+| ---- | ---- | ------------ | ----- | ------------------------------------------------- |
+| 0    | 4    | fact         | 0.250 | CD 动机和限制（长上下文推理限制、CD 限制、内存效率） |
+| 1    | 4    | verification | 0.250 | Meta-training 目标的实验验证（QA、更新效率、D2L）  |
+| 2    | 5    | verification | 0.200 | 架构组件及能力验证（Perceiver、Chunking、检索）     |
+
+**语义查询验证**:
+- "context distillation" → Community 0（正确，CD 相关 facts）
+- "hypernetwork architecture" → Community 2（正确，架构 methods）
+- "retrieval performance" → Community 1（正确，验证结果）
+
+**Resolution 敏感性**:
+- 0.5 → 2 社区（粗粒度）
+- 1.0 → 3 社区（推荐）
+- 1.5 → 4 社区
+- 2.0 → 4 社区（细粒度）
+
+**结论**: 社区检测在真实数据上产生了语义合理的分组，查询排序符合预期。
+
+---
+
 ## 当前状态 (graphRAG 分支)
 
 ### 代码库统计
 
-**总代码量**: ~1,913 行（atom-graph-prompt 模块）
+**总代码量**: ~1,960 行（atom-graph-prompt 模块）
 
 **文件结构**:
 
 ```
 packages/opencode/src/tool/atom-graph-prompt/
 ├── builder.ts        (265 行) - Prompt 构建 + 社区 Prompt
-├── community.ts      (440 行) - 社区检测（Phase 3.1 新增）
+├── community.ts      (460 行) - 社区检测 + 项目范围过滤
 ├── embedding.ts      (190 行) - Embedding 管理
-├── hybrid.ts         (364 行) - 混合检索 + 社区过滤
+├── hybrid.ts         (375 行) - 混合检索 + 社区过滤 + 项目范围语义搜索
 ├── scoring.ts        (226 行) - 智能评分
 ├── token-budget.ts   (268 行) - Token 预算
 ├── traversal.ts      (105 行) - 图遍历
@@ -244,6 +294,7 @@ packages/opencode/test/tool/atom-graph-prompt/
 | Phase 3.1: 社区检测      | ✅ 完成 | 100%   | graphRAG |
 | Phase 3.1 测试补全       | ✅ 完成 | 100%   | graphRAG |
 | 文档与 Agent 集成        | ✅ 完成 | 100%   | graphRAG |
+| 真实数据测试 + Bug 修复  | ✅ 完成 | 100%   | graphRAG |
 | Phase 3.2: 社区分析增强  | 🔲 长期 | 0%     | -        |
 | Phase 4: 高级功能        | 🔲 长期 | 0%     | -        |
 | Phase 5: Memory Subagent | 🔲 长期 | 0%     | -        |
@@ -326,14 +377,12 @@ await agent.useTool("atom_graph_prompt_smart", {
 2. ~~实现 Phase 2 测试用例~~ ✅ (70 tests)
 3. ~~创建用户指南文档~~ ✅
 4. ~~扩展 agent 系统提示~~ ✅
+5. ~~在真实 Atom Graph 上测试社区检测~~ ✅ (13 atoms, 3 社区, 语义查询验证通过)
+6. ~~修复项目范围 bug~~ ✅ (community.ts, hybrid.ts 按 research_project_id 过滤)
 
 ### 中优先级
 
-5. **实际测试**
-   - 在真实的 Atom Graph 上测试社区检测
-   - 验证社区质量和摘要准确性
-
-6. **功能增强**
+7. **功能增强**
    - 集成真实的 embedding API（OpenAI/HuggingFace）
    - 性能测试和优化
 
@@ -365,17 +414,20 @@ await agent.useTool("atom_graph_prompt_smart", {
    - 需要集成真实的 embedding API
    - 考虑使用 OpenAI 或 HuggingFace
 
-3. **社区质量**: 需要在实际数据上验证
-   - 社区大小是否合理
-   - 摘要是否准确
-   - 关键词是否有代表性
+3. **社区质量**: ✅ 已在实际数据上验证
+   - 社区大小合理（4-5 个 atoms/社区，resolution=1.0）
+   - 摘要准确，能反映社区主题
+   - 关键词有代表性，语义查询排序符合预期
+
+4. **项目范围隔离**: buildGraph() 和 semanticSearch() 未按项目过滤
+   - 多项目共享数据库时会加载全部 atoms
+   - 已修复：通过 Instance.project.id → ResearchProjectTable → research_project_id 过滤
 
 ### 改进方向
 
-1. **测试覆盖**: 提高测试覆盖率到 80%+
-2. **性能基准**: 建立性能基准测试
-3. **用户反馈**: 在实际使用中收集反馈
-4. **文档完善**: 添加更多使用示例和故障排查指南
+1. **性能基准**: 建立性能基准测试
+2. **用户反馈**: 在实际使用中收集反馈
+3. **真实 Embedding**: 集成 OpenAI/HuggingFace embedding API 替换模拟数据
 
 ---
 
@@ -383,9 +435,8 @@ await agent.useTool("atom_graph_prompt_smart", {
 
 ### 短期（1-2 周）
 
-1. 在实际项目中测试 GraphRAG 功能
+1. 集成真实的 embedding API（OpenAI/HuggingFace）
 2. 收集用户反馈和改进建议
-3. 集成真实的 embedding API
 
 ### 中期（1 个月）
 
@@ -403,10 +454,11 @@ await agent.useTool("atom_graph_prompt_smart", {
 
 | 提交      | 日期       | 说明                             |
 | --------- | ---------- | -------------------------------- |
-| `3329004` | 2026-04-06 | Phase 1 & 2 初始实现             |
-| `ea51fac` | 2026-04-08 | Phase 3.1 社区检测               |
-| `6184b62` | 2026-04-08 | 文档更新和进展记录               |
-| (pending) | 2026-04-11 | 测试补全 + 用户指南 + Agent 集成 |
+| `3329004` | 2026-04-06 | Phase 1 & 2 初始实现                    |
+| `ea51fac` | 2026-04-08 | Phase 3.1 社区检测                      |
+| `6184b62` | 2026-04-08 | 文档更新和进展记录                      |
+| `2a5ae23` | 2026-04-11 | 测试补全 + 用户指南 + Agent 集成        |
+| `33e8837` | 2026-04-12 | 项目范围修复 + 真实数据测试验证         |
 
 ---
 
@@ -414,9 +466,9 @@ await agent.useTool("atom_graph_prompt_smart", {
 
 - **开发**: zj45
 - **分支**: graphRAG
-- **时间**: 2026-04-06 至 2026-04-11
-- **代码量**: ~5,000 行（含测试和文档）
+- **时间**: 2026-04-06 至 2026-04-12
+- **代码量**: ~5,100 行（含测试和文档）
 
 ---
 
-最后更新: 2026-04-11
+最后更新: 2026-04-12

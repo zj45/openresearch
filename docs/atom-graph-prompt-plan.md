@@ -67,9 +67,9 @@ Atom Graph Prompt 是一个基于知识图谱的智能 prompt 生成工具，用
 
 **文件**:
 
-- `community.ts` (440 行) - 社区检测核心
+- `community.ts` (460 行) - 社区检测核心（含项目范围过滤）
 - `types.ts` - 添加社区类型
-- `hybrid.ts` - 社区过滤支持
+- `hybrid.ts` - 社区过滤支持（含项目范围语义搜索）
 - `builder.ts` - 社区 Prompt 生成
 - `atom-graph-prompt-smart.ts` - 社区参数集成
 
@@ -179,12 +179,13 @@ Atom Graph Prompt 是一个基于知识图谱的智能 prompt 生成工具，用
 - ✅ 修复 Phase 3.1 单元测试的数据库依赖问题
 - ✅ 创建用户指南文档
 - ✅ 扩展 agent 系统提示
+- ✅ 在真实 Atom Graph 上测试社区检测（13 atoms, 3 社区）
+- ✅ 修复项目范围 bug（community.ts、hybrid.ts 按 research_project_id 过滤）
 
 ### 中优先级
 
 - 🔲 集成真实的 embedding API（OpenAI/HuggingFace）
 - 🔲 增量更新机制
-- 🔲 在真实 Atom Graph 上测试社区检测
 - 🔲 性能测试和优化
 
 ### 长期
@@ -267,4 +268,4 @@ await tool.execute({
 
 ---
 
-最后更新: 2026-04-11
+最后更新: 2026-04-12
