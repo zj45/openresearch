@@ -1,4 +1,4 @@
-import { Database, eq, and } from "../../storage/db"
+import { Database, eq, or } from "../../storage/db"
 import { AtomTable, AtomRelationTable } from "../../research/research.sql"
 import { Filesystem } from "../../util/filesystem"
 import type { TraversalOptions, TraversedAtom, RelationType } from "./types"
@@ -77,9 +77,19 @@ export async function traverseAtomGraph(options: TraversalOptions): Promise<Trav
       continue
     }
 
-    // 获取邻居（出边）
+    // 获取邻居（双向边）。LongMemEval 会话图是顺序链，
+    // 只沿出边遍历会导致命中后续 turn 时无法回到答案 turn。
     const relations = Database.use((db) =>
-      db.select().from(AtomRelationTable).where(eq(AtomRelationTable.atom_id_source, current.atomId)).all(),
+      db
+        .select()
+        .from(AtomRelationTable)
+        .where(
+          or(
+            eq(AtomRelationTable.atom_id_source, current.atomId),
+            eq(AtomRelationTable.atom_id_target, current.atomId),
+          ),
+        )
+        .all(),
     )
 
     // 过滤关系类型
@@ -90,11 +100,12 @@ export async function traverseAtomGraph(options: TraversalOptions): Promise<Trav
 
     // 添加邻居到队列
     for (const rel of filteredRelations) {
-      if (!visited.has(rel.atom_id_target)) {
+      const nextId = rel.atom_id_source === current.atomId ? rel.atom_id_target : rel.atom_id_source
+      if (!visited.has(nextId)) {
         queue.push({
-          atomId: rel.atom_id_target,
+          atomId: nextId,
           distance: current.distance + 1,
-          path: [...current.path, rel.atom_id_target],
+          path: [...current.path, nextId],
           relationChain: [...current.relationChain, rel.relation_type as RelationType],
         })
       }

@@ -36,10 +36,13 @@
  */
 
 import path from "path"
+import os from "os"
+import fs from "fs/promises"
 import { parseArgs } from "util"
 import { runEvaluation, saveResults, type RetrievalMode, type EvalMode } from "./runner"
 import type { EvalConfig } from "./types"
 import { DEFAULT_CONFIG } from "./types"
+import { Instance } from "../../../src/project/instance"
 
 async function main() {
   const { values } = parseArgs({
@@ -87,23 +90,24 @@ Options:
     process.exit(values.help ? 0 : 1)
   }
 
-  const retrievalMode = (values["retrieval-mode"] || "graphrag") as RetrievalMode
-  const evalMode = (values["eval-mode"] || "substring") as EvalMode
-  const outputDir =
-    values.output || path.join(__dirname, "output", `${retrievalMode}-${Date.now()}`)
+  const str = (v: string | boolean | undefined) => (typeof v === "string" ? v : undefined)
+
+  const retrievalMode = (str(values["retrieval-mode"]) || "graphrag") as RetrievalMode
+  const evalMode = (str(values["eval-mode"]) || "substring") as EvalMode
+  const outputDir = str(values.output) || path.join(__dirname, "output", `${retrievalMode}-${Date.now()}`)
 
   const config: EvalConfig = {
     ...DEFAULT_CONFIG,
-    datasetPath: path.resolve(values.dataset!),
+    datasetPath: path.resolve(str(values.dataset) || ""),
     outputDir,
-    maxQuestions: parseInt(values["max-questions"] || "0", 10),
-    chunkStrategy: (values["chunk-strategy"] as any) || DEFAULT_CONFIG.chunkStrategy,
-    retrievalTopK: parseInt(values["top-k"] || "20", 10),
-    maxDepth: parseInt(values["max-depth"] || "2", 10),
-    generationModel: values.model || DEFAULT_CONFIG.generationModel,
-    evalModel: values["eval-model"] || DEFAULT_CONFIG.evalModel,
-    apiKey: values["api-key"] || process.env.OPENAI_API_KEY || "",
-    apiBaseUrl: values["api-base"] || DEFAULT_CONFIG.apiBaseUrl,
+    maxQuestions: parseInt(str(values["max-questions"]) || "0", 10),
+    chunkStrategy: (str(values["chunk-strategy"]) as any) || DEFAULT_CONFIG.chunkStrategy,
+    retrievalTopK: parseInt(str(values["top-k"]) || "20", 10),
+    maxDepth: parseInt(str(values["max-depth"]) || "2", 10),
+    generationModel: str(values.model) || DEFAULT_CONFIG.generationModel,
+    evalModel: str(values["eval-model"]) || DEFAULT_CONFIG.evalModel,
+    apiKey: str(values["api-key"]) || process.env.OPENAI_API_KEY || "",
+    apiBaseUrl: str(values["api-base"]) || DEFAULT_CONFIG.apiBaseUrl,
   }
 
   // Validate
@@ -112,9 +116,9 @@ Options:
     process.exit(1)
   }
 
-  console.log("=" .repeat(60))
+  console.log("=".repeat(60))
   console.log("LongMemEval Evaluation — OpenResearch GraphRAG")
-  console.log("=" .repeat(60))
+  console.log("=".repeat(60))
   console.log(`Dataset:         ${config.datasetPath}`)
   console.log(`Retrieval mode:  ${retrievalMode}`)
   console.log(`Eval mode:       ${evalMode}`)
@@ -124,24 +128,31 @@ Options:
   console.log(`Generation model:${config.generationModel}`)
   console.log(`Max questions:   ${config.maxQuestions || "all"}`)
   console.log(`Output:          ${outputDir}`)
-  console.log("=" .repeat(60))
+  console.log("=".repeat(60))
   console.log()
 
-  // Run evaluation
-  const result = await runEvaluation(config, retrievalMode, evalMode, (completed, total, last) => {
-    const pct = ((completed / total) * 100).toFixed(1)
-    const label = last?.evalResult.autoeval_label || "?"
-    process.stdout.write(
-      `\r[${completed}/${total}] ${pct}% — ${last?.questionId || ""} → ${label}  `,
-    )
+  // Create temporary project directory
+  const tmpDir = path.join(os.tmpdir(), `longmemeval-${Date.now()}`)
+  await fs.mkdir(tmpDir, { recursive: true })
+
+  // Run evaluation in project context
+  const result = await Instance.provide({
+    directory: tmpDir,
+    fn: async () => {
+      return await runEvaluation(config, retrievalMode, evalMode, (completed, total, last) => {
+        const pct = ((completed / total) * 100).toFixed(1)
+        const label = last?.evalResult.autoeval_label || "?"
+        process.stdout.write(`\r[${completed}/${total}] ${pct}% — ${last?.questionId || ""} → ${label}  `)
+      })
+    },
   })
 
   console.log("\n")
 
   // Print summary
-  console.log("=" .repeat(60))
+  console.log("=".repeat(60))
   console.log("RESULTS")
-  console.log("=" .repeat(60))
+  console.log("=".repeat(60))
   console.log()
   console.log(`Overall accuracy: ${result.summary.overall.accuracy.toFixed(1)}%`)
   console.log(`Average latency:  ${result.summary.overall.avgLatency.toFixed(2)}s`)

@@ -11,7 +11,12 @@
  */
 
 import { hybridSearch, graphOnlySearch } from "../../../src/tool/atom-graph-prompt/hybrid"
-import { loadEmbeddingCache, saveEmbeddingCache, getAtomEmbedding, cosineSimilarity } from "../../../src/tool/atom-graph-prompt/embedding"
+import {
+  loadEmbeddingCache,
+  saveEmbeddingCache,
+  getAtomEmbedding,
+  cosineSimilarity,
+} from "../../../src/tool/atom-graph-prompt/embedding"
 import { Database, eq } from "../../../src/storage/db"
 import { AtomTable, ResearchProjectTable } from "../../../src/research/research.sql"
 import { Filesystem } from "../../../src/util/filesystem"
@@ -25,10 +30,7 @@ import type { EvalConfig, RetrievedContext, LongMemEvalInstance } from "./types"
  * This is the core evaluation step — we test how well our retrieval system
  * can find the right conversation facts given a natural language question.
  */
-export async function retrieveContext(
-  instance: LongMemEvalInstance,
-  config: EvalConfig,
-): Promise<RetrievedContext> {
+export async function retrieveContext(instance: LongMemEvalInstance, config: EvalConfig): Promise<RetrievedContext> {
   const startTime = performance.now()
 
   // Use our hybrid search with the question as the query
@@ -54,6 +56,7 @@ export async function retrieveContext(
     type: a.atom.atom_type,
     score: a.score,
     distance: a.distance,
+    timeCreated: a.atom.time_created,
   }))
 
   // Build formatted context string (similar to Zep's context template)
@@ -91,7 +94,9 @@ export async function retrieveContextSemanticOnly(
   )?.id
 
   const allAtoms = researchProjectId
-    ? Database.use((db) => db.select().from(AtomTable).where(eq(AtomTable.research_project_id, researchProjectId)).all())
+    ? Database.use((db) =>
+        db.select().from(AtomTable).where(eq(AtomTable.research_project_id, researchProjectId)).all(),
+      )
     : Database.use((db) => db.select().from(AtomTable).all())
 
   // Filter to only this instance's atoms
@@ -99,7 +104,7 @@ export async function retrieveContextSemanticOnly(
   const instanceAtoms = allAtoms.filter((a) => a.atom_id.startsWith(prefix))
 
   // Score each atom by semantic similarity
-  const scored: Array<{ atom: typeof instanceAtoms[0]; claim: string; similarity: number }> = []
+  const scored: Array<{ atom: (typeof instanceAtoms)[0]; claim: string; similarity: number }> = []
 
   for (const atom of instanceAtoms) {
     let claimText = ""
@@ -134,6 +139,7 @@ export async function retrieveContextSemanticOnly(
     type: s.atom.atom_type,
     score: s.similarity,
     distance: 0,
+    timeCreated: s.atom.time_created,
   }))
 
   const formattedContext = formatContext(atoms, instance)
@@ -151,9 +157,7 @@ export async function retrieveContextSemanticOnly(
  * Full-context baseline: return all conversation turns as context.
  * This mimics the "Full-context" baseline in the Zep paper.
  */
-export async function retrieveContextFullHistory(
-  instance: LongMemEvalInstance,
-): Promise<RetrievedContext> {
+export async function retrieveContextFullHistory(instance: LongMemEvalInstance): Promise<RetrievedContext> {
   const startTime = performance.now()
 
   const allTurns: Array<{ content: string; sessionId: string }> = []
@@ -200,6 +204,7 @@ function formatContext(
     type: string
     score: number
     distance: number
+    timeCreated?: number
   }>,
   instance: LongMemEvalInstance,
 ): string {
@@ -216,7 +221,9 @@ function formatContext(
   sections.push("<FACTS>")
 
   for (const atom of atoms) {
-    sections.push(`- ${atom.claim} (score: ${atom.score.toFixed(3)})`)
+    const date = atom.timeCreated ? new Date(atom.timeCreated).toISOString().slice(0, 10) : "unknown-date"
+    sections.push(`- [${date}] ${atom.atomName} | distance=${atom.distance} | score=${atom.score.toFixed(3)}`)
+    sections.push(`  ${atom.claim}`)
   }
 
   sections.push("</FACTS>")

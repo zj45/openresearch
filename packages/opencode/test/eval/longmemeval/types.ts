@@ -83,6 +83,7 @@ export interface RetrievedContext {
     type: string
     score: number
     distance: number
+    timeCreated?: number
   }>
   formattedContext: string
   retrievalTimeMs: number

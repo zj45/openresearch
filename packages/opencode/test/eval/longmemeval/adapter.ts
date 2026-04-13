@@ -20,6 +20,7 @@ import { Database, eq, or } from "../../../src/storage/db"
 import { AtomTable, AtomRelationTable, ResearchProjectTable } from "../../../src/research/research.sql"
 import { Instance } from "../../../src/project/instance"
 import { Filesystem } from "../../../src/util/filesystem"
+import { mkdir } from "fs/promises"
 import path from "path"
 import type {
   LongMemEvalInstance,
@@ -69,17 +70,15 @@ export function ensureResearchProject(): string {
 /**
  * Turn-level chunking: each conversation turn becomes one atom.
  */
-function chunkByTurn(
-  sessions: LongMemEvalTurn[][],
-  sessionIds: string[],
-  sessionDates: string[],
-): ConversationFact[] {
+function chunkByTurn(sessions: LongMemEvalTurn[][], sessionIds: string[], sessionDates: string[]): ConversationFact[] {
   const facts: ConversationFact[] = []
 
   for (let si = 0; si < sessions.length; si++) {
     const session = sessions[si]
     const sessionId = sessionIds[si] ?? `session-${si}`
-    const baseTime = sessionDates[si] ? new Date(sessionDates[si]).getTime() : Date.now() - (sessions.length - si) * 86400000
+    const baseTime = sessionDates[si]
+      ? new Date(sessionDates[si]).getTime()
+      : Date.now() - (sessions.length - si) * 86400000
 
     for (let ti = 0; ti < session.length; ti++) {
       const turn = session[ti]
@@ -111,7 +110,9 @@ function chunkBySession(
   for (let si = 0; si < sessions.length; si++) {
     const session = sessions[si]
     const sessionId = sessionIds[si] ?? `session-${si}`
-    const baseTime = sessionDates[si] ? new Date(sessionDates[si]).getTime() : Date.now() - (sessions.length - si) * 86400000
+    const baseTime = sessionDates[si]
+      ? new Date(sessionDates[si]).getTime()
+      : Date.now() - (sessions.length - si) * 86400000
 
     const content = session.map((t) => `[${t.role}]: ${t.content}`).join("\n")
     const hasAnswer = session.some((t) => t.has_answer)
@@ -144,7 +145,9 @@ function chunkBySlidingWindow(
   for (let si = 0; si < sessions.length; si++) {
     const session = sessions[si]
     const sessionId = sessionIds[si] ?? `session-${si}`
-    const baseTime = sessionDates[si] ? new Date(sessionDates[si]).getTime() : Date.now() - (sessions.length - si) * 86400000
+    const baseTime = sessionDates[si]
+      ? new Date(sessionDates[si]).getTime()
+      : Date.now() - (sessions.length - si) * 86400000
 
     for (let start = 0; start < session.length; start += Math.max(1, Math.floor(windowSize / 2))) {
       const windowTurns = session.slice(start, start + windowSize)
@@ -184,7 +187,25 @@ function extractEntities(facts: ConversationFact[]): ConversationEntity[] {
       const word = words[i].replace(/[^\w]/g, "")
       if (word.length >= 2 && word[0] === word[0].toUpperCase() && word[0] !== word[0].toLowerCase()) {
         // Skip common words
-        if (["The", "This", "That", "What", "How", "When", "Where", "Why", "Yes", "No", "And", "But", "Or", "If"].includes(word)) continue
+        if (
+          [
+            "The",
+            "This",
+            "That",
+            "What",
+            "How",
+            "When",
+            "Where",
+            "Why",
+            "Yes",
+            "No",
+            "And",
+            "But",
+            "Or",
+            "If",
+          ].includes(word)
+        )
+          continue
 
         const key = word.toLowerCase()
         if (entityMap.has(key)) {
@@ -240,7 +261,7 @@ export async function ingestInstance(
 
   // 3. Write claim files and insert atoms
   const atomListDir = path.join(Instance.directory, "atom_list")
-  await Filesystem.mkdir(atomListDir)
+  await mkdir(atomListDir, { recursive: true })
 
   const atomIds: string[] = []
   const now = Date.now()
@@ -324,19 +345,9 @@ export function cleanupInstance(questionId: string): void {
     Database.use((db) =>
       db
         .delete(AtomRelationTable)
-        .where(
-          or(
-            eq(AtomRelationTable.atom_id_source, atomId),
-            eq(AtomRelationTable.atom_id_target, atomId),
-          ),
-        )
+        .where(or(eq(AtomRelationTable.atom_id_source, atomId), eq(AtomRelationTable.atom_id_target, atomId)))
         .run(),
     )
-    Database.use((db) =>
-      db
-        .delete(AtomTable)
-        .where(eq(AtomTable.atom_id, atomId))
-        .run(),
-    )
+    Database.use((db) => db.delete(AtomTable).where(eq(AtomTable.atom_id, atomId)).run())
   }
 }

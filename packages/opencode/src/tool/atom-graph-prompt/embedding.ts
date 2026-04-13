@@ -18,7 +18,7 @@ export interface EmbeddingCache {
 }
 
 const CACHE_FILE = ".atom-embeddings-cache.json"
-const CACHE_VERSION = "1.0"
+const CACHE_VERSION = "1.2"
 
 /**
  * 获取缓存文件路径
@@ -93,13 +93,66 @@ export async function getAtomEmbedding(atomId: string, claimText: string, cache:
 /**
  * 生成文本的 embedding
  *
- * 简化版实现：使用 TF-IDF 风格的向量化
- * 生产环境应该使用真实的 embedding API（如 OpenAI）
+ * 使用火山引擎 doubao-embedding-vision 模型
+ * 返回 2048 维向量
  */
 async function generateEmbedding(text: string): Promise<number[]> {
-  // 简单的文本向量化（用于演示）
-  // 实际应该调用 OpenAI embedding API 或其他服务
+  try {
+    return await generateVolcengineEmbedding(text)
+  } catch (error) {
+    console.warn("Volcengine embedding failed, falling back to simple embedding:", error)
+    return await generateSimpleEmbedding(text)
+  }
+}
 
+/**
+ * 使用火山引擎 API 生成 embedding（带超时）
+ */
+async function generateVolcengineEmbedding(text: string): Promise<number[]> {
+  const apiKey = process.env.ARK_API_KEY || process.env.VOLCENGINE_API_KEY
+  const baseURL = "https://ark.cn-beijing.volces.com/api/v3/embeddings/multimodal"
+  const endpointId = "ep-20260413180208-4pz2c"
+
+  if (!apiKey) {
+    throw new Error("ARK_API_KEY or VOLCENGINE_API_KEY is required for Volcengine embeddings")
+  }
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 30000) // 30 秒超时
+
+  try {
+    const response = await fetch(baseURL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: endpointId,
+        input: [{ text, type: "text" }],
+      }),
+      signal: controller.signal,
+    })
+
+    clearTimeout(timeout)
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`Volcengine embedding API error ${response.status}: ${errorText}`)
+    }
+
+    const data = await response.json()
+    return data.data.embedding
+  } catch (error) {
+    clearTimeout(timeout)
+    throw error
+  }
+}
+
+/**
+ * 简化版实现：使用 TF-IDF 风格的向量化（fallback）
+ */
+async function generateSimpleEmbedding(text: string): Promise<number[]> {
   // 1. 文本预处理
   const normalized = text
     .toLowerCase()
@@ -110,8 +163,8 @@ async function generateEmbedding(text: string): Promise<number[]> {
   // 2. 分词
   const words = normalized.split(" ")
 
-  // 3. 生成固定维度的向量（384维，模拟 sentence-transformers）
-  const dimension = 384
+  // 3. 生成固定维度的向量（2048维，匹配火山引擎）
+  const dimension = 2048
   const vector = new Array(dimension).fill(0)
 
   // 4. 简单的哈希映射到向量空间
@@ -175,16 +228,98 @@ export function cosineSimilarity(vec1: number[], vec2: number[]): number {
 }
 
 /**
- * 批量生成 embeddings
+ * 批量生成 embeddings（优化版，支持并发 API 调用）
  */
 export async function batchGenerateEmbeddings(
   items: Array<{ atomId: string; claimText: string }>,
   cache: EmbeddingCache,
 ): Promise<void> {
-  for (const item of items) {
-    await getAtomEmbedding(item.atomId, item.claimText, cache)
+  // 过滤出需要生成 embedding 的项
+  const needsEmbedding = items.filter((item) => !cache.embeddings[item.atomId])
+
+  if (needsEmbedding.length === 0) {
+    return
+  }
+
+  console.log(`Generating embeddings for ${needsEmbedding.length} atoms using Volcengine API...`)
+
+  try {
+    // 批量处理（并发调用，每次最多 10 个）
+    const batchSize = 10
+    for (let i = 0; i < needsEmbedding.length; i += batchSize) {
+      const batch = needsEmbedding.slice(i, i + batchSize)
+      const texts = batch.map((item) => item.claimText)
+
+      // 并发调用 API
+      const embeddings = await batchGenerateVolcengineEmbeddings(texts)
+
+      // 更新缓存
+      for (let j = 0; j < batch.length; j++) {
+        cache.embeddings[batch[j].atomId] = {
+          atomId: batch[j].atomId,
+          claimEmbedding: embeddings[j],
+          timestamp: Date.now(),
+        }
+      }
+
+      console.log(`  Processed ${Math.min(i + batchSize, needsEmbedding.length)}/${needsEmbedding.length} atoms`)
+    }
+  } catch (error) {
+    console.warn("Batch embedding failed, falling back to individual generation:", error)
+    // Fallback: 逐个生成
+    for (const item of needsEmbedding) {
+      await getAtomEmbedding(item.atomId, item.claimText, cache)
+    }
   }
 
   // 保存缓存
   await saveEmbeddingCache(cache)
+}
+
+/**
+ * 批量调用火山引擎 embedding API（带超时）
+ */
+async function batchGenerateVolcengineEmbeddings(texts: string[]): Promise<number[][]> {
+  const apiKey = process.env.ARK_API_KEY || process.env.VOLCENGINE_API_KEY
+  const baseURL = "https://ark.cn-beijing.volces.com/api/v3/embeddings/multimodal"
+  const endpointId = "ep-20260413180208-4pz2c"
+
+  if (!apiKey) {
+    throw new Error("ARK_API_KEY or VOLCENGINE_API_KEY is required for Volcengine embeddings")
+  }
+
+  const promises = texts.map(async (text) => {
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 30000)
+
+    try {
+      const response = await fetch(baseURL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: endpointId,
+          input: [{ text, type: "text" }],
+        }),
+        signal: controller.signal,
+      })
+
+      clearTimeout(timeout)
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`Volcengine batch embedding API error ${response.status}: ${errorText}`)
+      }
+
+      const data = await response.json()
+      return data.data.embedding
+    } catch (error) {
+      clearTimeout(timeout)
+      throw error
+    }
+  })
+
+  return await Promise.all(promises)
 }
