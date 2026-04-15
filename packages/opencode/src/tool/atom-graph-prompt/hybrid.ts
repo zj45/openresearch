@@ -8,12 +8,9 @@ import {
   batchGenerateEmbeddings,
 } from "./embedding"
 import { scoreAndRankAtoms, selectDiverseAtoms, type ScoringWeights, DEFAULT_WEIGHTS } from "./scoring"
-import { selectAtomsWithinBudget, adaptiveBudgetSelection, type TokenBudgetOptions } from "./token-budget"
-import { Database, eq } from "../../storage/db"
-import { AtomTable, ResearchProjectTable } from "../../research/research.sql"
-import { Filesystem } from "../../util/filesystem"
-import { Instance } from "../../project/instance"
-import { loadCommunityCache, getCommunityAtoms } from "./community"
+import { selectAtomsWithinBudget } from "./token-budget"
+import { loadCommunityCache } from "./community"
+import { Store } from "./store"
 
 /**
  * 混合检索选项
@@ -225,30 +222,17 @@ interface SemanticSearchResult {
  */
 async function semanticSearch(query: string, options: SemanticSearchOptions): Promise<SemanticSearchResult> {
   const { topK, threshold = 0.0, atomTypes } = options
+  const store = await Store.get()
 
   // 1. 生成查询的 embedding
   const cache = await loadEmbeddingCache()
-  const queryEmbedding = await getAtomEmbedding(`query:${query}`, query, cache)
+  let queryEmbedding = await getAtomEmbedding(`query:${query}`, query, cache)
 
   // 2. 获取当前项目的 atoms
-  let atoms: (typeof AtomTable.$inferSelect)[]
-  const researchProjectId = Database.use((db) =>
-    db
-      .select({ id: ResearchProjectTable.research_project_id })
-      .from(ResearchProjectTable)
-      .where(eq(ResearchProjectTable.project_id, Instance.project.id))
-      .get(),
-  )?.id
-  atoms = researchProjectId
-    ? Database.use((db) =>
-        db.select().from(AtomTable).where(eq(AtomTable.research_project_id, researchProjectId)).all(),
-      )
-    : Database.use((db) => db.select().from(AtomTable).all())
-
-  // 3. 应用类型过滤
-  if (atomTypes && atomTypes.length > 0) {
-    atoms = atoms.filter((atom) => atomTypes.includes(atom.atom_type as AtomType))
-  }
+  const atoms = await store.atoms({
+    projectId: await store.project(),
+    atomTypes,
+  })
 
   // 4. 先读取 claim 文本，再批量预生成 embeddings
   const claims: Array<{
@@ -258,18 +242,13 @@ async function semanticSearch(query: string, options: SemanticSearchOptions): Pr
   }> = []
 
   for (const atom of atoms) {
-    try {
-      if (!atom.atom_claim_path) continue
-      const claimText = await Filesystem.readText(atom.atom_claim_path)
-      if (!claimText) continue
-      claims.push({
-        atomId: atom.atom_id,
-        atomName: atom.atom_name,
-        claimText,
-      })
-    } catch {
-      continue
-    }
+    const content = await store.content(atom)
+    if (!content.claim) continue
+    claims.push({
+      atomId: atom.atom_id,
+      atomName: atom.atom_name,
+      claimText: content.claim,
+    })
   }
 
   await batchGenerateEmbeddings(
@@ -279,6 +258,10 @@ async function semanticSearch(query: string, options: SemanticSearchOptions): Pr
     })),
     cache,
   )
+
+  // Batch generation may switch embedding backends after a timeout/fallback,
+  // so refresh the query vector from the current cache before comparing.
+  queryEmbedding = await getAtomEmbedding(`query:${query}`, query, cache)
 
   const similarities: Array<{
     atomId: string

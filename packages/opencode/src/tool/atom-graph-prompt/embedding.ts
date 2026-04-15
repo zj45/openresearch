@@ -1,4 +1,8 @@
 import path from "path"
+import { Auth } from "../../auth"
+import { Config } from "../../config/config"
+import { Env } from "../../env"
+import { ModelsDev } from "../../provider/models"
 import { Instance } from "../../project/instance"
 import { Filesystem } from "../../util/filesystem"
 
@@ -14,11 +18,188 @@ export interface AtomEmbedding {
 
 export interface EmbeddingCache {
   version: string
+  model: string
   embeddings: Record<string, AtomEmbedding>
 }
 
 const CACHE_FILE = ".atom-embeddings-cache.json"
-const CACHE_VERSION = "1.2"
+const CACHE_VERSION = "2.0"
+const SIMPLE_DIM = 384
+const SIMPLE_MODEL = `simple:${SIMPLE_DIM}`
+
+type Target = {
+  model: string
+  url: string
+  headers: Record<string, string>
+  dims?: number
+  signature: string
+}
+
+const mode = Instance.state(() => ({ simple: false }))
+
+function trim(url: string): string {
+  return url.replace(/\/+$/, "")
+}
+
+function parse(value: string): { providerID: string; modelID: string } | undefined {
+  const [providerID, ...rest] = value.split("/")
+  const modelID = rest.join("/")
+  if (!providerID || !modelID) return
+  return { providerID, modelID }
+}
+
+function num(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return value
+  if (typeof value !== "string") return
+  const parsed = Number(value)
+  if (Number.isFinite(parsed)) return parsed
+}
+
+function record(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {}
+  return Object.fromEntries(
+    Object.entries(value).flatMap(([key, val]) => {
+      if (typeof val !== "string") return []
+      return [[key, val]]
+    }),
+  )
+}
+
+function active(target: Target | null) {
+  if (mode().simple || !target) return SIMPLE_MODEL
+  return target.signature
+}
+
+async function target() {
+  const cfg = await Config.get()
+  const env = Env.get("OPENCODE_EMBEDDING_MODEL")
+  if (env) {
+    const parsed = parse(env)
+    if (parsed) return resolve(parsed.providerID, parsed.modelID, cfg)
+  }
+
+  const refs = [cfg.small_model, cfg.model]
+    .flatMap((item) => (item ? [parse(item)?.providerID] : []))
+    .filter((item): item is string => Boolean(item))
+
+  for (const id of refs) {
+    const model = cfg.provider?.[id]?.options?.embeddingModel
+    if (typeof model === "string") {
+      const next = await resolve(id, model, cfg)
+      if (next) return next
+    }
+  }
+
+  for (const [id, provider] of Object.entries(cfg.provider ?? {})) {
+    const model = provider.options?.embeddingModel
+    if (typeof model !== "string") continue
+    const next = await resolve(id, model, cfg)
+    if (next) return next
+  }
+
+  return null
+}
+
+async function resolve(providerID: string, modelID: string, cfg: Awaited<ReturnType<typeof Config.get>>) {
+  const db = (await ModelsDev.get())[providerID]
+  const provider = cfg.provider?.[providerID]
+  const base =
+    Env.get("OPENCODE_EMBEDDING_BASE_URL") ??
+    provider?.options?.embeddingBaseURL ??
+    provider?.options?.baseURL ??
+    provider?.api ??
+    db?.api
+
+  if (!base) return null
+
+  const auth = await Auth.get(providerID)
+  const envs = provider?.env ?? db?.env ?? []
+  const key =
+    Env.get("OPENCODE_EMBEDDING_API_KEY") ??
+    provider?.options?.embeddingApiKey ??
+    provider?.options?.apiKey ??
+    (auth?.type === "api" ? auth.key : undefined) ??
+    envs.map((name) => Env.get(name)).find(Boolean)
+
+  const headers = {
+    ...record(provider?.options?.headers),
+    ...record(provider?.options?.embeddingHeaders),
+    "Content-Type": "application/json",
+  }
+
+  if (!headers.Authorization && key) {
+    headers.Authorization = `Bearer ${key}`
+  }
+
+  const root = trim(base)
+  const url = root.endsWith("/embeddings") ? root : `${root}/embeddings`
+  const dims = num(Env.get("OPENCODE_EMBEDDING_DIMENSIONS") ?? provider?.options?.embeddingDimensions)
+
+  return {
+    model: modelID,
+    url,
+    headers,
+    dims,
+    signature: `${providerID}/${modelID}@${root}`,
+  } satisfies Target
+}
+
+async function sync(cache: EmbeddingCache) {
+  const next = active(await target())
+  if (cache.model === next) return
+  cache.model = next
+  cache.embeddings = {}
+}
+
+async function remote(texts: string[], target: Target) {
+  const body: Record<string, unknown> = {
+    model: target.model,
+    input: texts,
+  }
+
+  if (target.dims) body.dimensions = target.dims
+
+  const response = await fetch(target.url, {
+    method: "POST",
+    headers: target.headers,
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(30_000),
+  })
+
+  if (!response.ok) {
+    throw new Error(`Embedding API error ${response.status}: ${await response.text()}`)
+  }
+
+  const data = (await response.json()) as {
+    data?: Array<{
+      embedding?: number[]
+    }>
+  }
+
+  const embeddings = data.data?.map((item) => item.embedding).filter((item): item is number[] => Array.isArray(item))
+  if (!embeddings || embeddings.length !== texts.length) {
+    throw new Error("Embedding API returned an unexpected payload")
+  }
+
+  return embeddings
+}
+
+async function generate(texts: string[], cache: EmbeddingCache) {
+  await sync(cache)
+  const next = await target()
+  if (next && cache.model !== SIMPLE_MODEL) {
+    try {
+      return await remote(texts, next)
+    } catch (err) {
+      console.warn("Embedding API failed, falling back to simple embedding:", err)
+      mode().simple = true
+      cache.model = SIMPLE_MODEL
+      cache.embeddings = {}
+    }
+  }
+
+  return Promise.all(texts.map((text) => generateSimpleEmbedding(text)))
+}
 
 /**
  * 获取缓存文件路径
@@ -32,6 +213,7 @@ function getCachePath(): string {
  */
 export async function loadEmbeddingCache(): Promise<EmbeddingCache> {
   const cachePath = getCachePath()
+  const next = active(await target())
 
   try {
     if (await Filesystem.exists(cachePath)) {
@@ -39,7 +221,7 @@ export async function loadEmbeddingCache(): Promise<EmbeddingCache> {
       const cache = JSON.parse(content) as EmbeddingCache
 
       // 版本检查
-      if (cache.version === CACHE_VERSION) {
+      if (cache.version === CACHE_VERSION && cache.model === next) {
         return cache
       }
     }
@@ -50,6 +232,7 @@ export async function loadEmbeddingCache(): Promise<EmbeddingCache> {
   // 返回空缓存
   return {
     version: CACHE_VERSION,
+    model: next,
     embeddings: {},
   }
 }
@@ -71,6 +254,8 @@ export async function saveEmbeddingCache(cache: EmbeddingCache): Promise<void> {
  * 获取 atom 的 embedding（从缓存或生成新的）
  */
 export async function getAtomEmbedding(atomId: string, claimText: string, cache: EmbeddingCache): Promise<number[]> {
+  await sync(cache)
+
   // 检查缓存
   const cached = cache.embeddings[atomId]
   if (cached) {
@@ -78,7 +263,7 @@ export async function getAtomEmbedding(atomId: string, claimText: string, cache:
   }
 
   // 生成新的 embedding
-  const embedding = await generateEmbedding(claimText)
+  const [embedding] = await generate([claimText], cache)
 
   // 更新缓存
   cache.embeddings[atomId] = {
@@ -93,64 +278,7 @@ export async function getAtomEmbedding(atomId: string, claimText: string, cache:
 /**
  * 生成文本的 embedding
  *
- * 使用火山引擎 doubao-embedding-vision 模型
- * 返回 2048 维向量
- */
-async function generateEmbedding(text: string): Promise<number[]> {
-  try {
-    return await generateVolcengineEmbedding(text)
-  } catch (error) {
-    console.warn("Volcengine embedding failed, falling back to simple embedding:", error)
-    return await generateSimpleEmbedding(text)
-  }
-}
-
-/**
- * 使用火山引擎 API 生成 embedding（带超时）
- */
-async function generateVolcengineEmbedding(text: string): Promise<number[]> {
-  const apiKey = process.env.ARK_API_KEY || process.env.VOLCENGINE_API_KEY
-  const baseURL = "https://ark.cn-beijing.volces.com/api/v3/embeddings/multimodal"
-  const endpointId = "ep-20260413180208-4pz2c"
-
-  if (!apiKey) {
-    throw new Error("ARK_API_KEY or VOLCENGINE_API_KEY is required for Volcengine embeddings")
-  }
-
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 30000) // 30 秒超时
-
-  try {
-    const response = await fetch(baseURL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: endpointId,
-        input: [{ text, type: "text" }],
-      }),
-      signal: controller.signal,
-    })
-
-    clearTimeout(timeout)
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(`Volcengine embedding API error ${response.status}: ${errorText}`)
-    }
-
-    const data = await response.json()
-    return data.data.embedding
-  } catch (error) {
-    clearTimeout(timeout)
-    throw error
-  }
-}
-
-/**
- * 简化版实现：使用 TF-IDF 风格的向量化（fallback）
+ * 默认 fallback 返回 384 维向量
  */
 async function generateSimpleEmbedding(text: string): Promise<number[]> {
   // 1. 文本预处理
@@ -163,8 +291,8 @@ async function generateSimpleEmbedding(text: string): Promise<number[]> {
   // 2. 分词
   const words = normalized.split(" ")
 
-  // 3. 生成固定维度的向量（2048维，匹配火山引擎）
-  const dimension = 2048
+  // 3. 生成固定维度的向量
+  const dimension = SIMPLE_DIM
   const vector = new Array(dimension).fill(0)
 
   // 4. 简单的哈希映射到向量空间
@@ -234,6 +362,8 @@ export async function batchGenerateEmbeddings(
   items: Array<{ atomId: string; claimText: string }>,
   cache: EmbeddingCache,
 ): Promise<void> {
+  await sync(cache)
+
   // 过滤出需要生成 embedding 的项
   const needsEmbedding = items.filter((item) => !cache.embeddings[item.atomId])
 
@@ -241,85 +371,24 @@ export async function batchGenerateEmbeddings(
     return
   }
 
-  console.log(`Generating embeddings for ${needsEmbedding.length} atoms using Volcengine API...`)
+  const size = 10
 
-  try {
-    // 批量处理（并发调用，每次最多 10 个）
-    const batchSize = 10
-    for (let i = 0; i < needsEmbedding.length; i += batchSize) {
-      const batch = needsEmbedding.slice(i, i + batchSize)
-      const texts = batch.map((item) => item.claimText)
+  for (let i = 0; i < needsEmbedding.length; i += size) {
+    const batch = needsEmbedding.slice(i, i + size)
+    const embeddings = await generate(
+      batch.map((item) => item.claimText),
+      cache,
+    )
 
-      // 并发调用 API
-      const embeddings = await batchGenerateVolcengineEmbeddings(texts)
-
-      // 更新缓存
-      for (let j = 0; j < batch.length; j++) {
-        cache.embeddings[batch[j].atomId] = {
-          atomId: batch[j].atomId,
-          claimEmbedding: embeddings[j],
-          timestamp: Date.now(),
-        }
+    for (const [idx, item] of batch.entries()) {
+      cache.embeddings[item.atomId] = {
+        atomId: item.atomId,
+        claimEmbedding: embeddings[idx],
+        timestamp: Date.now(),
       }
-
-      console.log(`  Processed ${Math.min(i + batchSize, needsEmbedding.length)}/${needsEmbedding.length} atoms`)
-    }
-  } catch (error) {
-    console.warn("Batch embedding failed, falling back to individual generation:", error)
-    // Fallback: 逐个生成
-    for (const item of needsEmbedding) {
-      await getAtomEmbedding(item.atomId, item.claimText, cache)
     }
   }
 
   // 保存缓存
   await saveEmbeddingCache(cache)
-}
-
-/**
- * 批量调用火山引擎 embedding API（带超时）
- */
-async function batchGenerateVolcengineEmbeddings(texts: string[]): Promise<number[][]> {
-  const apiKey = process.env.ARK_API_KEY || process.env.VOLCENGINE_API_KEY
-  const baseURL = "https://ark.cn-beijing.volces.com/api/v3/embeddings/multimodal"
-  const endpointId = "ep-20260413180208-4pz2c"
-
-  if (!apiKey) {
-    throw new Error("ARK_API_KEY or VOLCENGINE_API_KEY is required for Volcengine embeddings")
-  }
-
-  const promises = texts.map(async (text) => {
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 30000)
-
-    try {
-      const response = await fetch(baseURL, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: endpointId,
-          input: [{ text, type: "text" }],
-        }),
-        signal: controller.signal,
-      })
-
-      clearTimeout(timeout)
-
-      if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(`Volcengine batch embedding API error ${response.status}: ${errorText}`)
-      }
-
-      const data = await response.json()
-      return data.data.embedding
-    } catch (error) {
-      clearTimeout(timeout)
-      throw error
-    }
-  })
-
-  return await Promise.all(promises)
 }

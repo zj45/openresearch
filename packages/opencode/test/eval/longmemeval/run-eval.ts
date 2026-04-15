@@ -16,11 +16,17 @@
  *   --max-depth       Graph traversal max depth (default: 2)
  *   --model           Generation model (default: gpt-4o-mini)
  *   --eval-model      Evaluation model (default: gpt-4o)
- *   --api-key         OpenAI API key (or set OPENAI_API_KEY env var)
- *   --api-base        API base URL (default: https://api.openai.com/v1)
+ *   --api-key         OpenAI-compatible API key
+ *   --api-base        API base URL
  *
  * Environment variables:
- *   OPENAI_API_KEY    API key for generation and evaluation
+ *   OPENAI_API_KEY              API key for generation and evaluation
+ *   OPENAI_BASE_URL / OPENAI_API_BASE
+ *                           API base URL for generation and evaluation
+ *   OPENCODE_EMBEDDING_API_KEY
+ *                           Fallback API key when sharing one provider
+ *   OPENCODE_EMBEDDING_BASE_URL
+ *                           Fallback API base when sharing one provider
  *
  * Example:
  *   # Quick test with 10 questions, no API key needed (substring eval)
@@ -43,6 +49,13 @@ import { runEvaluation, saveResults, type RetrievalMode, type EvalMode } from ".
 import type { EvalConfig } from "./types"
 import { DEFAULT_CONFIG } from "./types"
 import { Instance } from "../../../src/project/instance"
+
+function env(...names: string[]) {
+  for (const name of names) {
+    const value = process.env[name]
+    if (value) return value
+  }
+}
 
 async function main() {
   const { values } = parseArgs({
@@ -82,9 +95,9 @@ Options:
   --top-k             Retrieval top K (default: 20)
   --max-depth         Graph traversal max depth (default: 2)
   --model             Generation model (default: gpt-4o-mini)
-  --eval-model        Evaluation model (default: gpt-4o)
-  --api-key           OpenAI API key (or set OPENAI_API_KEY env var)
-  --api-base          API base URL (default: https://api.openai.com/v1)
+   --eval-model        Evaluation model (default: gpt-4o)
+   --api-key           OpenAI-compatible API key
+   --api-base          API base URL
   -h, --help          Show this help
 `)
     process.exit(values.help ? 0 : 1)
@@ -106,13 +119,16 @@ Options:
     maxDepth: parseInt(str(values["max-depth"]) || "2", 10),
     generationModel: str(values.model) || DEFAULT_CONFIG.generationModel,
     evalModel: str(values["eval-model"]) || DEFAULT_CONFIG.evalModel,
-    apiKey: str(values["api-key"]) || process.env.OPENAI_API_KEY || "",
-    apiBaseUrl: str(values["api-base"]) || DEFAULT_CONFIG.apiBaseUrl,
+    apiKey: str(values["api-key"]) || env("OPENAI_API_KEY", "OPENCODE_EMBEDDING_API_KEY") || "",
+    apiBaseUrl:
+      str(values["api-base"]) ||
+      env("OPENAI_BASE_URL", "OPENAI_API_BASE", "OPENCODE_EMBEDDING_BASE_URL") ||
+      DEFAULT_CONFIG.apiBaseUrl,
   }
 
   // Validate
   if (evalMode === "llm" && !config.apiKey) {
-    console.error("Error: --api-key or OPENAI_API_KEY required for LLM evaluation mode")
+    console.error("Error: --api-key, OPENAI_API_KEY, or OPENCODE_EMBEDDING_API_KEY required for LLM evaluation mode")
     process.exit(1)
   }
 

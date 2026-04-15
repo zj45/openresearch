@@ -19,6 +19,7 @@ import type {
   LongMemEvalInstance,
   LongMemEvalQuestionType,
 } from "./types"
+import { complete } from "./api"
 
 // ---------------------------------------------------------------------------
 // LLM-based evaluation (official LongMemEval method)
@@ -106,32 +107,13 @@ function parseEvalResponse(response: string): "correct" | "incorrect" | "partial
  * Call the evaluation LLM (GPT-4o).
  */
 async function callEvalLLM(prompt: string, config: EvalConfig): Promise<string> {
-  const url = `${config.apiBaseUrl}/chat/completions`
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${config.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: config.evalModel,
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.0,
-      max_tokens: 32,
-    }),
+  return complete({
+    config,
+    model: config.evalModel,
+    messages: [{ role: "user", content: prompt }],
+    temperature: 0.0,
+    maxTokens: 32,
   })
-
-  if (!response.ok) {
-    const body = await response.text()
-    throw new Error(`Eval LLM API error ${response.status}: ${body}`)
-  }
-
-  const data = (await response.json()) as {
-    choices: Array<{ message: { content: string } }>
-  }
-
-  return data.choices[0]?.message?.content?.trim() ?? ""
 }
 
 // ---------------------------------------------------------------------------
@@ -142,10 +124,7 @@ async function callEvalLLM(prompt: string, config: EvalConfig): Promise<string> 
  * Simple substring-match evaluation for fast debugging.
  * Checks if key phrases from the ground truth appear in the hypothesis.
  */
-export function evaluateWithSubstringMatch(
-  instance: LongMemEvalInstance,
-  answer: GeneratedAnswer,
-): EvalResult {
+export function evaluateWithSubstringMatch(instance: LongMemEvalInstance, answer: GeneratedAnswer): EvalResult {
   const hypothesis = answer.hypothesis.toLowerCase()
   const groundTruth = instance.answer.toLowerCase()
 
@@ -238,12 +217,9 @@ function computeGroupMetrics(results: EvalResult[]) {
   const accuracy = total > 0 ? (correct / total) * 100 : 0
 
   const avgLatency =
-    total > 0
-      ? results.reduce((sum, r) => sum + r.retrieval_time_ms + r.generation_time_ms, 0) / total / 1000
-      : 0
+    total > 0 ? results.reduce((sum, r) => sum + r.retrieval_time_ms + r.generation_time_ms, 0) / total / 1000 : 0
 
-  const avgContextTokens =
-    total > 0 ? results.reduce((sum, r) => sum + r.context_tokens, 0) / total : 0
+  const avgContextTokens = total > 0 ? results.reduce((sum, r) => sum + r.context_tokens, 0) / total : 0
 
   return { total, correct, accuracy, avgLatency, avgContextTokens }
 }

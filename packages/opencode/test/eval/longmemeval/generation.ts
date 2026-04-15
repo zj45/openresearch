@@ -8,6 +8,7 @@
  */
 
 import type { EvalConfig, RetrievedContext, GeneratedAnswer, LongMemEvalInstance } from "./types"
+import { complete } from "./api"
 
 /**
  * Generate an answer for a LongMemEval question using retrieved context.
@@ -92,35 +93,16 @@ function buildUserPrompt(instance: LongMemEvalInstance, context: RetrievedContex
  * Call an OpenAI-compatible LLM API.
  */
 async function callLLM(systemPrompt: string, userPrompt: string, config: EvalConfig): Promise<string> {
-  const url = `${config.apiBaseUrl}/chat/completions`
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${config.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: config.generationModel,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      temperature: config.temperature,
-      max_tokens: 512,
-    }),
+  return complete({
+    config,
+    model: config.generationModel,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    temperature: config.temperature,
+    maxTokens: 512,
   })
-
-  if (!response.ok) {
-    const body = await response.text()
-    throw new Error(`LLM API error ${response.status}: ${body}`)
-  }
-
-  const data = (await response.json()) as {
-    choices: Array<{ message: { content: string } }>
-  }
-
-  return data.choices[0]?.message?.content?.trim() ?? ""
 }
 
 /**
