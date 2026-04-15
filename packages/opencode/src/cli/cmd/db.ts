@@ -2,7 +2,9 @@ import type { Argv } from "yargs"
 import { spawn } from "child_process"
 import { Database } from "../../storage/db"
 import { Database as BunDatabase } from "bun:sqlite"
+import { Neo4jGraph } from "../../research/neo4j"
 import { UI } from "../ui"
+import { bootstrap } from "../bootstrap"
 import { cmd } from "./cmd"
 import { JsonMigration } from "../../storage/json-migration"
 import { EOL } from "os"
@@ -108,11 +110,42 @@ const MigrateCommand = cmd({
   },
 })
 
+const Neo4jBackfillCommand = cmd({
+  command: "neo4j-backfill",
+  describe: "backfill SQLite atom graph into Neo4j projection",
+  builder: (yargs: Argv) =>
+    yargs
+      .option("all", {
+        type: "boolean",
+        default: false,
+        describe: "backfill all research projects",
+      })
+      .option("research-project-id", {
+        type: "string",
+        describe: "specific research project id to sync",
+      }),
+  handler: async (args: { all: boolean; researchProjectId?: string }) => {
+    await bootstrap(process.cwd(), async () => {
+      const ok = args.all ? await Neo4jGraph.backfill() : await Neo4jGraph.backfill(args.researchProjectId)
+      if (!ok) {
+        UI.error("Neo4j is not configured or not reachable")
+        process.exit(1)
+      }
+      UI.println(args.all ? "Neo4j backfill complete for all research projects" : "Neo4j backfill complete")
+    })
+  },
+})
+
 export const DbCommand = cmd({
   command: "db",
   describe: "database tools",
   builder: (yargs: Argv) => {
-    return yargs.command(QueryCommand).command(PathCommand).command(MigrateCommand).demandCommand()
+    return yargs
+      .command(QueryCommand)
+      .command(PathCommand)
+      .command(MigrateCommand)
+      .command(Neo4jBackfillCommand)
+      .demandCommand()
   },
   handler: () => {},
 })

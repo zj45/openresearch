@@ -16,6 +16,7 @@
  *   --max-depth       Graph traversal max depth (default: 2)
  *   --model           Generation model (default: gpt-4o-mini)
  *   --eval-model      Evaluation model (default: gpt-4o)
+ *   --graph-store     sqlite | dual | neo4j (default: env or sqlite)
  *   --api-key         OpenAI-compatible API key
  *   --api-base        API base URL
  *
@@ -44,6 +45,7 @@
 import path from "path"
 import os from "os"
 import fs from "fs/promises"
+import { spawn } from "child_process"
 import { parseArgs } from "util"
 import { runEvaluation, saveResults, type RetrievalMode, type EvalMode } from "./runner"
 import type { EvalConfig } from "./types"
@@ -55,6 +57,28 @@ function env(...names: string[]) {
     const value = process.env[name]
     if (value) return value
   }
+}
+
+async function cmd(cwd: string, args: string[]) {
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn("git", args, {
+      cwd,
+      stdio: "ignore",
+    })
+    child.on("error", reject)
+    child.on("close", (code) => {
+      if (code === 0) return resolve()
+      reject(new Error(`git ${args.join(" ")} failed with exit code ${code}`))
+    })
+  })
+}
+
+async function initProject(dir: string) {
+  await cmd(dir, ["init", "--quiet"])
+  await fs.writeFile(
+    path.join(dir, ".git", "opencode"),
+    `longmemeval-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  )
 }
 
 async function main() {
@@ -71,6 +95,7 @@ async function main() {
       "max-depth": { type: "string" },
       model: { type: "string" },
       "eval-model": { type: "string" },
+      "graph-store": { type: "string" },
       "api-key": { type: "string" },
       "api-base": { type: "string" },
       help: { type: "boolean", short: "h" },
@@ -96,9 +121,10 @@ Options:
   --max-depth         Graph traversal max depth (default: 2)
   --model             Generation model (default: gpt-4o-mini)
    --eval-model        Evaluation model (default: gpt-4o)
+   --graph-store       sqlite | dual | neo4j
    --api-key           OpenAI-compatible API key
    --api-base          API base URL
-  -h, --help          Show this help
+   -h, --help          Show this help
 `)
     process.exit(values.help ? 0 : 1)
   }
@@ -107,7 +133,13 @@ Options:
 
   const retrievalMode = (str(values["retrieval-mode"]) || "graphrag") as RetrievalMode
   const evalMode = (str(values["eval-mode"]) || "substring") as EvalMode
+  const graphStoreMode = (str(values["graph-store"]) || process.env.OPENRESEARCH_NEO4J_MODE || "sqlite") as
+    | "sqlite"
+    | "dual"
+    | "neo4j"
   const outputDir = str(values.output) || path.join(__dirname, "output", `${retrievalMode}-${Date.now()}`)
+
+  process.env.OPENRESEARCH_NEO4J_MODE = graphStoreMode
 
   const config: EvalConfig = {
     ...DEFAULT_CONFIG,
@@ -119,6 +151,7 @@ Options:
     maxDepth: parseInt(str(values["max-depth"]) || "2", 10),
     generationModel: str(values.model) || DEFAULT_CONFIG.generationModel,
     evalModel: str(values["eval-model"]) || DEFAULT_CONFIG.evalModel,
+    graphStoreMode,
     apiKey: str(values["api-key"]) || env("OPENAI_API_KEY", "OPENCODE_EMBEDDING_API_KEY") || "",
     apiBaseUrl:
       str(values["api-base"]) ||
@@ -142,6 +175,7 @@ Options:
   console.log(`Top K:           ${config.retrievalTopK}`)
   console.log(`Max depth:       ${config.maxDepth}`)
   console.log(`Generation model:${config.generationModel}`)
+  console.log(`Graph store:     ${config.graphStoreMode}`)
   console.log(`Max questions:   ${config.maxQuestions || "all"}`)
   console.log(`Output:          ${outputDir}`)
   console.log("=".repeat(60))
@@ -150,6 +184,7 @@ Options:
   // Create temporary project directory
   const tmpDir = path.join(os.tmpdir(), `longmemeval-${Date.now()}`)
   await fs.mkdir(tmpDir, { recursive: true })
+  await initProject(tmpDir)
 
   // Run evaluation in project context
   const result = await Instance.provide({

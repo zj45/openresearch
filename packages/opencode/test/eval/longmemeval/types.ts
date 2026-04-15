@@ -190,6 +190,9 @@ export interface EvalConfig {
   /** Temperature for answer generation */
   temperature: number
 
+  /** Graph storage mode used by GraphRAG retrieval */
+  graphStoreMode: "sqlite" | "dual" | "neo4j"
+
   // --- Output ---
 
   /** Directory for output files */
@@ -212,5 +215,6 @@ export const DEFAULT_CONFIG: EvalConfig = {
   apiBaseUrl: "https://api.openai.com/v1",
   apiKey: "",
   temperature: 0.0,
+  graphStoreMode: "sqlite",
   outputDir: "",
 }

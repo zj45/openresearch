@@ -55,6 +55,21 @@ export interface HybridSearchResult {
     fromGraphTraversal: number
     tokensUsed?: number
     budgetUsed?: number
+    timings?: {
+      semanticSearchMs?: number
+      semanticQueryEmbeddingMs?: number
+      semanticLoadAtomsMs?: number
+      semanticLoadClaimsMs?: number
+      semanticBatchEmbeddingsMs?: number
+      semanticSimilarityMs?: number
+      semanticSaveCacheMs?: number
+      communityFilterMs?: number
+      traversalMs?: number
+      enrichmentMs?: number
+      scoringMs?: number
+      tokenBudgetMs?: number
+      totalMs?: number
+    }
   }
 }
 
@@ -89,14 +104,26 @@ export async function hybridSearch(options: HybridSearchOptions): Promise<Hybrid
   let queryEmbedding: number[] | null = null
   let semanticAtomIds: string[] = []
   let fromSemanticSearch = 0
+  const timings: NonNullable<HybridSearchResult["metadata"]["timings"]> = {}
+  const totalStart = performance.now()
 
   // Step 1: 语义搜索（如果提供了 query）
   if (query) {
+    const start = performance.now()
     const semanticResults = await semanticSearch(query, {
       topK: semanticTopK,
       threshold: semanticThreshold,
       atomTypes,
     })
+    timings.semanticSearchMs = performance.now() - start
+    if (semanticResults.timings) {
+      timings.semanticQueryEmbeddingMs = semanticResults.timings.queryEmbeddingMs
+      timings.semanticLoadAtomsMs = semanticResults.timings.loadAtomsMs
+      timings.semanticLoadClaimsMs = semanticResults.timings.loadClaimsMs
+      timings.semanticBatchEmbeddingsMs = semanticResults.timings.batchEmbeddingsMs
+      timings.semanticSimilarityMs = semanticResults.timings.similarityMs
+      timings.semanticSaveCacheMs = semanticResults.timings.saveCacheMs
+    }
 
     queryEmbedding = semanticResults.queryEmbedding
     semanticAtomIds = semanticResults.results.map((r) => r.atomId)
@@ -106,7 +133,9 @@ export async function hybridSearch(options: HybridSearchOptions): Promise<Hybrid
   // Step 2: 应用社区过滤（Phase 3）
   let communityAtomIds: string[] = []
   if (communityFilter) {
+    const start = performance.now()
     communityAtomIds = await applyCommunityFilter(communityFilter)
+    timings.communityFilterMs = performance.now() - start
   }
 
   // Step 3: 确定图遍历的起始点
@@ -124,11 +153,16 @@ export async function hybridSearch(options: HybridSearchOptions): Promise<Hybrid
         selected: 0,
         fromSemanticSearch: 0,
         fromGraphTraversal: 0,
+        timings: {
+          ...timings,
+          totalMs: performance.now() - totalStart,
+        },
       },
     }
   }
 
   // Step 4: 图遍历
+  const traversalStart = performance.now()
   const traversedAtoms = await traverseAtomGraph({
     seedAtomIds: startAtomIds,
     maxDepth,
@@ -136,6 +170,7 @@ export async function hybridSearch(options: HybridSearchOptions): Promise<Hybrid
     relationTypes,
     atomTypes,
   })
+  timings.traversalMs = performance.now() - traversalStart
 
   // Step 5: 应用社区过滤到遍历结果
   let filteredAtoms = traversedAtoms
@@ -146,6 +181,7 @@ export async function hybridSearch(options: HybridSearchOptions): Promise<Hybrid
 
   // Step 6: 为 atoms 添加 embeddings（用于评分）
   if (queryEmbedding) {
+    const start = performance.now()
     const cache = await loadEmbeddingCache()
 
     for (const atom of filteredAtoms) {
@@ -156,19 +192,23 @@ export async function hybridSearch(options: HybridSearchOptions): Promise<Hybrid
     }
 
     await saveEmbeddingCache(cache)
+    timings.enrichmentMs = performance.now() - start
   }
 
   // Step 7: 智能评分和排序
+  const scoringStart = performance.now()
   const scoredAtoms = scoreAndRankAtoms(filteredAtoms, queryEmbedding, scoringWeights)
 
   // Step 8: 选择多样化的 atoms
   let selectedAtoms = selectDiverseAtoms(scoredAtoms, maxAtoms, diversityWeight)
+  timings.scoringMs = performance.now() - scoringStart
 
   // Step 9: Token 预算管理（如果指定了）
   let tokensUsed: number | undefined
   let budgetUsed: number | undefined
 
   if (maxTokens) {
+    const start = performance.now()
     const budgetResult = selectAtomsWithinBudget(selectedAtoms, {
       maxTokens,
       includeEvidence,
@@ -179,7 +219,10 @@ export async function hybridSearch(options: HybridSearchOptions): Promise<Hybrid
     selectedAtoms = budgetResult.selected
     tokensUsed = budgetResult.totalTokens
     budgetUsed = budgetResult.budgetUsed
+    timings.tokenBudgetMs = performance.now() - start
   }
+
+  timings.totalMs = performance.now() - totalStart
 
   return {
     atoms: selectedAtoms,
@@ -190,6 +233,7 @@ export async function hybridSearch(options: HybridSearchOptions): Promise<Hybrid
       fromGraphTraversal: traversedAtoms.length - fromSemanticSearch,
       tokensUsed,
       budgetUsed,
+      timings,
     },
   }
 }
@@ -208,6 +252,14 @@ interface SemanticSearchOptions {
  */
 interface SemanticSearchResult {
   queryEmbedding: number[]
+  timings?: {
+    queryEmbeddingMs?: number
+    loadAtomsMs?: number
+    loadClaimsMs?: number
+    batchEmbeddingsMs?: number
+    similarityMs?: number
+    saveCacheMs?: number
+  }
   results: Array<{
     atomId: string
     atomName: string
@@ -223,18 +275,24 @@ interface SemanticSearchResult {
 async function semanticSearch(query: string, options: SemanticSearchOptions): Promise<SemanticSearchResult> {
   const { topK, threshold = 0.0, atomTypes } = options
   const store = await Store.get()
+  const timings: NonNullable<SemanticSearchResult["timings"]> = {}
 
   // 1. 生成查询的 embedding
+  let start = performance.now()
   const cache = await loadEmbeddingCache()
   let queryEmbedding = await getAtomEmbedding(`query:${query}`, query, cache)
+  timings.queryEmbeddingMs = performance.now() - start
 
   // 2. 获取当前项目的 atoms
+  start = performance.now()
   const atoms = await store.atoms({
     projectId: await store.project(),
     atomTypes,
   })
+  timings.loadAtomsMs = performance.now() - start
 
   // 4. 先读取 claim 文本，再批量预生成 embeddings
+  start = performance.now()
   const claims: Array<{
     atomId: string
     atomName: string
@@ -250,7 +308,9 @@ async function semanticSearch(query: string, options: SemanticSearchOptions): Pr
       claimText: content.claim,
     })
   }
+  timings.loadClaimsMs = performance.now() - start
 
+  start = performance.now()
   await batchGenerateEmbeddings(
     claims.map((item) => ({
       atomId: item.atomId,
@@ -258,11 +318,13 @@ async function semanticSearch(query: string, options: SemanticSearchOptions): Pr
     })),
     cache,
   )
+  timings.batchEmbeddingsMs = performance.now() - start
 
   // Batch generation may switch embedding backends after a timeout/fallback,
   // so refresh the query vector from the current cache before comparing.
   queryEmbedding = await getAtomEmbedding(`query:${query}`, query, cache)
 
+  start = performance.now()
   const similarities: Array<{
     atomId: string
     atomName: string
@@ -281,15 +343,19 @@ async function semanticSearch(query: string, options: SemanticSearchOptions): Pr
       })
     }
   }
+  timings.similarityMs = performance.now() - start
 
   // 5. 保存缓存
+  start = performance.now()
   await saveEmbeddingCache(cache)
+  timings.saveCacheMs = performance.now() - start
 
   // 6. 排序并返回 top K
   similarities.sort((a, b) => b.similarity - a.similarity)
 
   return {
     queryEmbedding,
+    timings,
     results: similarities.slice(0, topK),
   }
 }

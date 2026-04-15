@@ -89,6 +89,26 @@
 
 这不是“默认切换到 Neo4j”，而是 **验证式 Phase**。
 
+### Phase 2 当前结论
+
+- ✅ 已完成 Neo4j graph projection PoC、SQLite -> Neo4j backfill、项目级实时投影
+- ✅ 已完成 `longmemeval-s` 上的 `SQLite GraphRAG vs Neo4j GraphRAG` 验证
+- ✅ 已完成本地 Neo4j 部署与连通验证
+- ⚠️ 当前结论：**暂不考虑用 Neo4j 替换 SQLite 作为 GraphRAG 默认读后端**
+
+当前结论依据：
+
+- Neo4j 在当前实现中没有带来足够明显的最终效果提升
+- `longmemeval-s` 上 Neo4j 版本最终正确率低于 SQLite 基线
+- 阶段级 profiling 表明当前瓶颈主要在 embedding，而不是 SQLite 图读取
+- Neo4j 方案增加了部署、同步、一致性和调试复杂度
+
+因此后续策略为：
+
+- SQLite 继续作为默认事实源和默认图读后端
+- Neo4j 分支作为已验证 PoC 封存保留
+- 后续研发回到 `graphRAG` 主线继续推进
+
 ### Phase 2 核心问题
 
 1. SQLite 是否已经足够支撑当前和中期的图检索需求？
@@ -108,10 +128,10 @@
 
 计划内容：
 
-- 🔲 设计 Neo4j graph schema（`ResearchProject` / `Atom` / `RELATES_TO`）
-- 🔲 从 SQLite 回填一个 research project 的完整子图到 Neo4j
-- 🔲 在 `GraphStore` 层新增 Neo4j 后端实现
-- 🔲 支持同一批查询分别走 SQLite / Neo4j
+- ✅ 设计 Neo4j graph schema（`ResearchProject` / `Atom` / `RELATES_TO`）
+- ✅ 从 SQLite 回填一个 research project 的完整子图到 Neo4j
+- ✅ 在 `GraphStore` 层新增 Neo4j 后端实现
+- ✅ 支持同一批查询分别走 SQLite / Neo4j
 
 ### Phase 2.2：实时更新机制
 
@@ -119,8 +139,8 @@
 
 计划内容：
 
-- 🔲 基于 `research.atoms.updated` 做项目级 projector
-- 🔲 验证项目级重建子图的成本与延迟
+- ✅ 基于 `research.atoms.updated` 做项目级 projector
+- ✅ 验证项目级重建子图的成本与延迟
 - 🔲 视情况细化事件为 atom / relation 级别增量事件
 - 🔲 明确失败重试与一致性策略
 
@@ -145,6 +165,8 @@
 - 🔲 多跳遍历延迟
 - 🔲 社区分析成本
 - 🔲 实时更新延迟
+- 🔲 `longmemeval-s` 上的 GraphRAG 性能表现
+- 🔲 `Neo4j GraphRAG` 在 `longmemeval-s` 上的延迟 / token / 正确率表现
 - 🔲 temporal thinking 可表达性
 - 🔲 维护与部署复杂度
 
@@ -153,6 +175,8 @@
 1. 继续以 SQLite 为主，不引入 Neo4j
 2. SQLite 作为事实源，Neo4j 作为图投影读模型
 3. Neo4j 值得承担更高权重，但仍需额外迁移计划
+
+当前结论：选择 **1. 继续以 SQLite 为主，不引入 Neo4j 作为默认后端**。
 
 ---
 
@@ -215,6 +239,8 @@ Phase 3 不是当前的存储验证主线，但需要作为长期 roadmap 保留
 - 验证 GraphRAG 对长上下文记忆检索是否有效
 - 对比 `GraphRAG vs full-context`
 - 在 Phase 2 中辅助对比 `SQLite GraphRAG vs Neo4j GraphRAG`
+- 对比 `SQLite GraphRAG` 与 `Neo4j GraphRAG` 在 `longmemeval-s` 上的性能指标
+- 单独记录 `Neo4j GraphRAG` 在 `longmemeval-s` 上的运行耗时、上下文 token 和正确率
 
 它不是产品 phase 的目标本身，也不决定存储架构的全部结论。
 
@@ -229,15 +255,14 @@ Phase 3 不是当前的存储验证主线，但需要作为长期 roadmap 保留
 - ✅ 真实 embedding API 接入
 - ✅ LongMemEval 初步验证
 - ✅ GraphStore 抽象（Phase 1）
+- ✅ Neo4j PoC、backfill、实时投影与 `longmemeval-s` 验证
 
 ### 下一步
 
-1. 设计 Neo4j graph schema
-2. 实现 SQLite -> Neo4j backfill PoC
-3. 基于 `research.atoms.updated` 做项目级实时投影
-4. 定义 temporal thinking 的最小查询模型
-5. 用真实研究项目 + LongMemEval 双轨验证 SQLite / Neo4j 取舍
-6. 保留 Phase 3 作为长期能力扩展路线
+1. 基于 SQLite 继续推进 temporal thinking 的最小查询模型
+2. 继续优化 GraphRAG 检索链路中的 embedding 开销
+3. 在 `graphRAG` 主线继续研发，不再以 Neo4j 替换为近期目标
+4. 保留 Phase 3 作为长期能力扩展路线
 
 ---
 

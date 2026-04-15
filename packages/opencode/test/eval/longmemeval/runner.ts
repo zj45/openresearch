@@ -17,16 +17,21 @@
 import fs from "fs/promises"
 import path from "path"
 import { ingestInstance, ensureResearchProject, cleanupInstance } from "./adapter"
-import { retrieveContext, retrieveContextSemanticOnly, retrieveContextFullHistory, computeRetrievalRecall } from "./retrieval"
+import {
+  retrieveContext,
+  retrieveContextSemanticOnly,
+  retrieveContextFullHistory,
+  computeRetrievalRecall,
+} from "./retrieval"
 import { generateAnswer } from "./generation"
-import { evaluateWithLLM, evaluateWithSubstringMatch, aggregateResults, formatSummaryTable, formatComparisonTable } from "./scorer"
-import type {
-  EvalConfig,
-  EvalResult,
-  GeneratedAnswer,
-  LongMemEvalInstance,
-  RetrievedContext,
-} from "./types"
+import {
+  evaluateWithLLM,
+  evaluateWithSubstringMatch,
+  aggregateResults,
+  formatSummaryTable,
+  formatComparisonTable,
+} from "./scorer"
+import type { EvalConfig, EvalResult, GeneratedAnswer, LongMemEvalInstance, RetrievedContext } from "./types"
 
 // ---------------------------------------------------------------------------
 // Dataset loading
@@ -46,10 +51,7 @@ export async function loadDataset(datasetPath: string): Promise<LongMemEvalInsta
 /**
  * Filter dataset instances based on config.
  */
-export function filterInstances(
-  instances: LongMemEvalInstance[],
-  config: EvalConfig,
-): LongMemEvalInstance[] {
+export function filterInstances(instances: LongMemEvalInstance[], config: EvalConfig): LongMemEvalInstance[] {
   let filtered = instances
 
   // Filter by question type
@@ -140,7 +142,7 @@ export async function evaluateInstance(
   }
 
   // 6. Cleanup graph state for this instance
-  cleanupInstance(instance.question_id)
+  await cleanupInstance(instance.question_id)
 
   return {
     questionId: instance.question_id,
@@ -219,10 +221,8 @@ export async function runEvaluation(
 
   // 5. Compute average retrieval recall
   const avgRetrievalRecall = {
-    sessionRecall:
-      recalls.length > 0 ? recalls.reduce((s, r) => s + r.sessionRecall, 0) / recalls.length : 0,
-    turnRecall:
-      recalls.length > 0 ? recalls.reduce((s, r) => s + r.turnRecall, 0) / recalls.length : 0,
+    sessionRecall: recalls.length > 0 ? recalls.reduce((s, r) => s + r.sessionRecall, 0) / recalls.length : 0,
+    turnRecall: recalls.length > 0 ? recalls.reduce((s, r) => s + r.turnRecall, 0) / recalls.length : 0,
   }
 
   const totalTimeMs = performance.now() - totalStart
@@ -270,6 +270,7 @@ export async function saveResults(run: RunResult, outputDir: string): Promise<vo
         config: {
           retrievalMode: run.retrievalMode,
           evalMode: run.evalMode,
+          graphStoreMode: run.config.graphStoreMode,
           retrievalTopK: run.config.retrievalTopK,
           maxDepth: run.config.maxDepth,
           chunkStrategy: run.config.chunkStrategy,
@@ -293,6 +294,7 @@ export async function saveResults(run: RunResult, outputDir: string): Promise<vo
     `Date: ${new Date().toISOString()}`,
     `Retrieval mode: ${run.retrievalMode}`,
     `Eval mode: ${run.evalMode}`,
+    `Graph store mode: ${run.config.graphStoreMode}`,
     `Total questions: ${run.results.length}`,
     `Total time: ${(run.totalTimeMs / 1000).toFixed(1)}s`,
     ``,

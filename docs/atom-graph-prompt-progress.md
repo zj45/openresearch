@@ -216,29 +216,86 @@ buildCommunityPrompt(
 **测试环境**: `research_project_1`（Doc-to-LoRA / Context Distillation 研究）
 
 **数据规模**:
+
 - 13 个 atoms（2 fact, 4 method, 7 verification）
 - 36 条关系（4 motivates, 6 derives, 26 validates）
 
 **社区检测结果（resolution=1.0, minCommunitySize=2）**:
 
-| 社区 | 大小 | 主导类型     | 密度  | 主题                                              |
-| ---- | ---- | ------------ | ----- | ------------------------------------------------- |
+| 社区 | 大小 | 主导类型     | 密度  | 主题                                                 |
+| ---- | ---- | ------------ | ----- | ---------------------------------------------------- |
 | 0    | 4    | fact         | 0.250 | CD 动机和限制（长上下文推理限制、CD 限制、内存效率） |
-| 1    | 4    | verification | 0.250 | Meta-training 目标的实验验证（QA、更新效率、D2L）  |
-| 2    | 5    | verification | 0.200 | 架构组件及能力验证（Perceiver、Chunking、检索）     |
+| 1    | 4    | verification | 0.250 | Meta-training 目标的实验验证（QA、更新效率、D2L）    |
+| 2    | 5    | verification | 0.200 | 架构组件及能力验证（Perceiver、Chunking、检索）      |
 
 **语义查询验证**:
+
 - "context distillation" → Community 0（正确，CD 相关 facts）
 - "hypernetwork architecture" → Community 2（正确，架构 methods）
 - "retrieval performance" → Community 1（正确，验证结果）
 
 **Resolution 敏感性**:
+
 - 0.5 → 2 社区（粗粒度）
 - 1.0 → 3 社区（推荐）
 - 1.5 → 4 社区
 - 2.0 → 4 社区（细粒度）
 
 **结论**: 社区检测在真实数据上产生了语义合理的分组，查询排序符合预期。
+
+---
+
+### 2026-04-15 - graphRAG-neo4j 分支验证与封存 ✅
+
+#### Phase 1 抽象层落地
+
+**实现内容**:
+
+- 新增 `store.ts`，将 GraphRAG 主读路径统一收敛到 `GraphStore`
+- `traversal.ts` / `hybrid.ts` / `community.ts` 改为通过统一读层访问 atom graph
+- 为 SQLite / Neo4j 后端切换预留明确边界
+
+#### Phase 2 Neo4j PoC
+
+**实现内容**:
+
+- 新增 `packages/opencode/src/research/neo4j.ts`
+- 增加 Neo4j 配置与 `neo4j-driver` 依赖
+- 实现 SQLite -> Neo4j backfill PoC
+- 基于 `research.atoms.updated` 做项目级实时投影
+- 增加 `db neo4j-backfill` 命令入口
+- 支持 `GraphStore` 在 `sqlite / dual / neo4j` 模式下切换
+
+#### LongMemEval-s 验证结果
+
+在隔离项目环境下，对 `longmemeval-s` 前 20 题进行了 `SQLite GraphRAG` 与 `Neo4j GraphRAG` 对比：
+
+| 后端            | 正确率 | 平均延迟 | 平均上下文     | Session Recall | Turn Recall |
+| --------------- | ------ | -------- | -------------- | -------------- | ----------- |
+| SQLite GraphRAG | 90.0%  | 118.00s  | 3785.85 tokens | 95.0%          | 95.0%       |
+| Neo4j GraphRAG  | 60.0%  | 15.77s   | 3323.55 tokens | 90.0%          | 75.0%       |
+
+#### 单题延迟 profiling
+
+对单题 `e47becba` 的阶段级 profiling 显示：
+
+- Neo4j 图读取本身很快（atoms 查询和图遍历均为毫秒级）
+- 当前主要瓶颈不在 Neo4j，而在 embedding 生成/刷新
+- `semanticBatchEmbeddingsMs` 显著高于图查询成本
+
+#### 分支结论
+
+- Neo4j PoC 已完成，具备本地部署、回填、实时投影和读层切换能力
+- 但当前验证结果表明：**Neo4j 暂不适合作为 GraphRAG 默认读后端替换 SQLite**
+- 原因：
+  - 最终效果提升有限，且在当前基准上低于 SQLite
+  - 瓶颈主要在 embedding，不在 SQLite 图读取
+  - 引入 Neo4j 会增加部署、同步和一致性复杂度
+
+#### 后续处理
+
+- `graphRAG-neo4j` 分支作为已验证的 PoC 归档保留
+- 主线研发切回 `graphRAG` 分支继续进行
 
 ---
 
@@ -379,18 +436,19 @@ await agent.useTool("atom_graph_prompt_smart", {
 4. ~~扩展 agent 系统提示~~ ✅
 5. ~~在真实 Atom Graph 上测试社区检测~~ ✅ (13 atoms, 3 社区, 语义查询验证通过)
 6. ~~修复项目范围 bug~~ ✅ (community.ts, hybrid.ts 按 research_project_id 过滤)
+7. ~~完成 Neo4j PoC 与 `longmemeval-s` 验证~~ ✅
 
 ### 中优先级
 
-7. **功能增强**
-   - 集成真实的 embedding API（OpenAI/HuggingFace）
-   - 性能测试和优化
+8. **功能增强**
+   - 持续优化 embedding 开销
+   - temporal thinking 最小模型
 
 ### 长期
 
-7. Phase 3.2: 社区分析增强
-8. Phase 4: 高级功能（时序/推荐/可视化）
-9. Phase 5: Memory Subagent
+9. Phase 3.2: 社区分析增强
+10. Phase 4: 高级功能（时序/推荐/可视化）
+11. Phase 5: Memory Subagent
 
 ---
 
@@ -427,7 +485,8 @@ await agent.useTool("atom_graph_prompt_smart", {
 
 1. **性能基准**: 建立性能基准测试
 2. **用户反馈**: 在实际使用中收集反馈
-3. **真实 Embedding**: 集成 OpenAI/HuggingFace embedding API 替换模拟数据
+3. **Embedding 性能**: 继续优化缓存、批量策略与 warm-cache 基准
+4. **Temporal Thinking**: 在 SQLite 主线基础上推进最小查询模型
 
 ---
 
@@ -435,8 +494,8 @@ await agent.useTool("atom_graph_prompt_smart", {
 
 ### 短期（1-2 周）
 
-1. 集成真实的 embedding API（OpenAI/HuggingFace）
-2. 收集用户反馈和改进建议
+1. 优化 embedding 生成与缓存策略
+2. 定义并实现 temporal thinking 最小模型
 
 ### 中期（1 个月）
 
@@ -452,23 +511,24 @@ await agent.useTool("atom_graph_prompt_smart", {
 
 ## 提交历史
 
-| 提交      | 日期       | 说明                             |
-| --------- | ---------- | -------------------------------- |
-| `3329004` | 2026-04-06 | Phase 1 & 2 初始实现                    |
-| `ea51fac` | 2026-04-08 | Phase 3.1 社区检测                      |
-| `6184b62` | 2026-04-08 | 文档更新和进展记录                      |
-| `2a5ae23` | 2026-04-11 | 测试补全 + 用户指南 + Agent 集成        |
-| `33e8837` | 2026-04-12 | 项目范围修复 + 真实数据测试验证         |
+| 提交             | 日期       | 说明                                    |
+| ---------------- | ---------- | --------------------------------------- |
+| `3329004`        | 2026-04-06 | Phase 1 & 2 初始实现                    |
+| `ea51fac`        | 2026-04-08 | Phase 3.1 社区检测                      |
+| `6184b62`        | 2026-04-08 | 文档更新和进展记录                      |
+| `2a5ae23`        | 2026-04-11 | 测试补全 + 用户指南 + Agent 集成        |
+| `33e8837`        | 2026-04-12 | 项目范围修复 + 真实数据测试验证         |
+| `graphRAG-neo4j` | 2026-04-15 | Neo4j PoC、LongMemEval-s 验证、分支封存 |
 
 ---
 
 ## 贡献者
 
 - **开发**: zj45
-- **分支**: graphRAG
-- **时间**: 2026-04-06 至 2026-04-12
+- **分支**: graphRAG / graphRAG-neo4j
+- **时间**: 2026-04-06 至 2026-04-15
 - **代码量**: ~5,100 行（含测试和文档）
 
 ---
 
-最后更新: 2026-04-12
+最后更新: 2026-04-15

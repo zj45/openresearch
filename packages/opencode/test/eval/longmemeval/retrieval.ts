@@ -46,6 +46,26 @@ export async function retrieveContext(instance: LongMemEvalInstance, config: Eva
     diversityWeight: 0.3,
   })
 
+  if (process.env.OPENRESEARCH_GRAPHRAG_PROFILE === "1") {
+    console.log(
+      JSON.stringify(
+        {
+          type: "graphrag-profile",
+          questionId: instance.question_id,
+          graphStoreMode: config.graphStoreMode,
+          timings: searchResult.metadata.timings,
+          totalFound: searchResult.metadata.totalFound,
+          selected: searchResult.metadata.selected,
+          fromSemanticSearch: searchResult.metadata.fromSemanticSearch,
+          fromGraphTraversal: searchResult.metadata.fromGraphTraversal,
+          tokensUsed: searchResult.metadata.tokensUsed,
+        },
+        null,
+        2,
+      ),
+    )
+  }
+
   const retrievalTimeMs = performance.now() - startTime
 
   // Format atoms for the response

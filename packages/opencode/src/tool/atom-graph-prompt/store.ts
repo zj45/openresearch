@@ -1,4 +1,5 @@
 import { AtomRelationTable, AtomTable, ResearchProjectTable } from "../../research/research.sql"
+import { Neo4jGraph } from "../../research/neo4j"
 import { Instance } from "../../project/instance"
 import { Database, eq, or } from "../../storage/db"
 import { Filesystem } from "../../util/filesystem"
@@ -140,8 +141,44 @@ const sqlite: GraphStore = {
   },
 }
 
+const projected: GraphStore = {
+  async project() {
+    return (await Neo4jGraph.projectByProjectId(Instance.project.id)) ?? sqlite.project()
+  },
+
+  async atom(atomId) {
+    return (await Neo4jGraph.atom(atomId)) ?? sqlite.atom(atomId)
+  },
+
+  async atoms(input = {}) {
+    return Neo4jGraph.atoms(input)
+  },
+
+  async relations(input = {}) {
+    return Neo4jGraph.relations(input)
+  },
+
+  async content(atom) {
+    return sqlite.content(atom)
+  },
+
+  async graph(input = {}) {
+    const projectId = input.projectId ?? (await projected.project())
+    const atoms = await projected.atoms({ ...input, projectId })
+    const relations = await projected.relations({
+      projectId,
+      atomIds: atoms.map((row) => row.atom_id),
+      relationTypes: input.relationTypes,
+    })
+    return { atoms, relations }
+  },
+}
+
 export const Store = {
   async get(): Promise<GraphStore> {
+    if ((await Neo4jGraph.mode()) === "neo4j" && (await Neo4jGraph.ready())) {
+      return projected
+    }
     return sqlite
   },
 }

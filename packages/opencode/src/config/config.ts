@@ -1142,6 +1142,15 @@ export namespace Config {
           url: z.string().optional().describe("Enterprise URL"),
         })
         .optional(),
+      neo4j: z
+        .object({
+          uri: z.string().optional().describe("Neo4j URI, eg bolt://localhost:7687"),
+          username: z.string().optional().describe("Neo4j username"),
+          password: z.string().optional().describe("Neo4j password"),
+          database: z.string().optional().describe("Neo4j database name"),
+          mode: z.enum(["off", "dual", "neo4j"]).optional().describe("Neo4j integration mode"),
+        })
+        .optional(),
       compaction: z
         .object({
           auto: z.boolean().optional().describe("Enable automatic compaction when context is full (default: true)"),

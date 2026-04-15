@@ -17,6 +17,7 @@
  */
 
 import { Database, eq, or } from "../../../src/storage/db"
+import { Neo4jGraph } from "../../../src/research/neo4j"
 import { AtomTable, AtomRelationTable, ResearchProjectTable } from "../../../src/research/research.sql"
 import { Instance } from "../../../src/project/instance"
 import { Filesystem } from "../../../src/util/filesystem"
@@ -329,6 +330,8 @@ export async function ingestInstance(
     }
   }
 
+  await Neo4jGraph.syncProject(rpId)
+
   return { facts, entities, atomIds, relationIds }
 }
 
@@ -336,7 +339,7 @@ export async function ingestInstance(
 // Cleanup — remove atoms for a given question instance
 // ---------------------------------------------------------------------------
 
-export function cleanupInstance(questionId: string): void {
+export async function cleanupInstance(questionId: string): Promise<void> {
   const prefix = `lme-${questionId}-`
   const atoms = Database.use((db) => db.select().from(AtomTable).all())
   const toDelete = atoms.filter((a) => a.atom_id.startsWith(prefix)).map((a) => a.atom_id)
@@ -350,4 +353,15 @@ export function cleanupInstance(questionId: string): void {
     )
     Database.use((db) => db.delete(AtomTable).where(eq(AtomTable.atom_id, atomId)).run())
   }
+
+  const rpId = Database.use((db) =>
+    db
+      .select({ id: ResearchProjectTable.research_project_id })
+      .from(ResearchProjectTable)
+      .where(eq(ResearchProjectTable.project_id, Instance.project.id))
+      .get(),
+  )?.id
+
+  if (!rpId) return
+  await Neo4jGraph.syncProject(rpId)
 }

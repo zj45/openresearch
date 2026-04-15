@@ -14,6 +14,7 @@ import { Snapshot } from "../snapshot"
 import { Truncate } from "../tool/truncation"
 import { ExperimentWatcher } from "../research/experiment-watcher"
 import { ExperimentLocalDownloadWatcher } from "../research/experiment-local-download-watcher"
+import { Neo4jGraph } from "../research/neo4j"
 
 export async function InstanceBootstrap() {
   Log.Default.info("bootstrapping", { directory: Instance.directory })
@@ -28,6 +29,7 @@ export async function InstanceBootstrap() {
   Truncate.init()
   ExperimentWatcher.init()
   ExperimentLocalDownloadWatcher.init()
+  await Neo4jGraph.init()
 
   Bus.subscribe(Command.Event.Executed, async (payload) => {
     if (payload.properties.name === Command.Default.INIT) {
